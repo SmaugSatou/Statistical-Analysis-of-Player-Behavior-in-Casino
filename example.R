@@ -60,7 +60,7 @@ Nations <- rbind(Nations,
 #  countries of residence. Most are the ISO 3166-1 codes.  #
 #  Exceptions are listed in the R code.                    #
 ############################################################
-BlockC1 <- read.csv(paste0(Folder1,"Demographics.csv"),
+BlockC1 <- read.csv(paste0("csv","Demographics.csv"),
                     header=TRUE,stringsAsFactors=FALSE);
    nC1 <- nrow(BlockC1); nC1
    length(unique(BlockC1$UserID))
@@ -89,7 +89,7 @@ BlockC1 <- read.csv(paste0(Folder1,"Demographics.csv"),
 # * BlockR1 has no blank rows with Windows, StakesC, and   #
 #   WinningsC all equal to 0.                              #
 ############################################################
-Raw <- read.csv(file=paste0(Folder1,"CashGames.csv"),
+Raw <- read.csv(file=paste0("csv","CashGames.csv"),
                 header=TRUE,stringsAsFactors=FALSE);
 BlockR1 <- data.frame(UserID=Raw$UserID,
                       Date=as.Date(Raw$Date,format="%Y-%m-%d"),
@@ -123,7 +123,7 @@ BlockR1 <- BlockR1[order(BlockR1$UserID,BlockR1$Date),];
 # * BlockT1 has no blank rows with Trnmts, StakesT, and    #
 #   WinningsT all equal to 0.                              #
 ############################################################
-Raw <- read.csv(file=paste0(Folder1,
+Raw <- read.csv(file=paste0("csv",
                                    "Tournaments.csv"),
                 header=TRUE,stringsAsFactors=FALSE);
 BlockT1 <- data.frame(UserID=Raw$UserID,
@@ -167,7 +167,7 @@ BlockT1 <- BlockT1[order(BlockT1$UserID,BlockT1$Date),];
 #  deposits result in money entering the player's gambling #
 #  account (and a charge to the player).                   #
 ############################################################
-Raw <- read.csv(paste0(Folder1,"Deposits.csv"),
+Raw <- read.csv(paste0("csv","Deposits.csv"),
                 header=TRUE,stringsAsFactors=FALSE);
 BlockD1 <- data.frame(UserID=Raw$UserID,
                       DepositID=Raw$DepositID,
@@ -403,7 +403,7 @@ Scrap1 <- subset(BlockD2,BlockD2$PayMeth=="VISA");
 #  withdrawals result in money exiting the player's        #
 #  gambling account (and the player getting paid).         #
 ############################################################
-Raw <- read.csv(paste0(Folder1,"Withdrawals.csv"),
+Raw <- read.csv(paste0("csv","Withdrawals.csv"),
                 header=TRUE,stringsAsFactors=FALSE);
 BlockW1 <- data.frame(UserID=Raw$UserID,
                       WithdrawalID=Raw$WithdrawalID,
