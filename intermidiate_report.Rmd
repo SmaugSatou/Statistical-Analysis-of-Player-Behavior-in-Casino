@@ -1,0 +1,48 @@
+---
+title: "Statistical Analysis of Player Behaviour in Online Poker"
+authors: "Prokhorov Roman, Holovin Maxim, Pasichnyk Nazar"
+---
+
+## 1. Research Topic
+We aim to analyze patterns in online poker player behavior using real transaction and gameplay data.
+Our study will examine relationships between player demographics, betting patterns, and financial outcomes to understand
+different player types and their gambling strategies.
+
+## 2. Data Source
+Source: The Transparency Project (www.thetransparencyproject.org)  
+Provider: Division on Addiction, Cambridge Health Alliance, Harvard Medical School  
+Dataset: "Second Session at the Virtual Poker Table"  
+Reference: Tom, M. A., et al. (2022). Second Session at the Virtual Poker Table:
+A Contemporary Study of Actual Online Poker Activity. Journal of Gambling Studies. https://doi.org/10.1007/s10899-022-10147-1  
+Sample: 5,028 online poker players who registered in February 2015
+
+## 3. Data Description
+The dataset consists of five interconnected CSV files:
+- Demographics (5,028 players): Age, Gender, Country of residence
+- Cash Games (51,763 daily records): Stakes wagered, winnings, number of sessions
+- Tournaments (82,831 daily records): Entry fees, prizes, number of tournaments
+- Deposits (295,119 transactions): Amount, payment method, transaction status
+- Withdrawals (32,307 transactions): Amount, payment method, transaction status
+
+Key variables include player demographics, daily gambling activity (stakes and winnings),
+and financial transactions (deposits and withdrawals in Euros).
+
+## 4. Preliminary Hypotheses
+
+### Hypothesis 1 (Linear Regression)
+There is a positive linear relationship between the total amount a player deposits and the total amount they withdraw.
+We expect that players who invest more money into their accounts will also cash out larger amounts,
+indicating either successful play or cycling of funds. We will use linear regression analysis to test this relationship
+and calculate the correlation coefficient.
+
+### Hypothesis 2 (Logistic Regression/Classification)
+Player demographic characteristics (age and gender) can predict whether a player primarily engages in cash games versus
+tournaments. We hypothesize that younger players and male players are more likely to prefer cash games over tournaments.
+We will develop a logistic regression model, train it on 70% of the data, and test its classification accuracy on the remaining
+30%.
+
+## 5. Initial Insights
+Preliminary exploration reveals that only 1,827 of 5,008 players (36%) made withdrawals, suggesting many players experience 
+net losses. The dataset shows distinct player groups: 4,232 played cash games and 3,448 played tournaments, with some overlap.
+The rich temporal structure allows for analysis of betting patterns over time, and multiple grouping variables enable comparative
+statistical tests between different player segments.
