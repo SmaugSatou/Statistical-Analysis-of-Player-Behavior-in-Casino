@@ -1,0 +1,588 @@
+---
+title: "Online Poker Player Behavior Analysis"
+author: "Roman Prokhorov, Maksym Holovin, Nazar Pasichnyk"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+    theme: flatly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6
+)
+```
+
+# 1. Setup and Configuration
+
+```{r load_libraries}
+# Load required packages
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(gridExtra)
+library(scales)
+
+# Set constants
+date_20150201 <- as.Date("2015-02-01", format = "%Y-%m-%d")
+date_20170101 <- as.Date("2017-01-01", format = "%Y-%m-%d")
+date_20170131 <- as.Date("2017-01-31", format = "%Y-%m-%d")
+alpha <- 0.001
+```
+
+# 2. Data Loading
+
+## 2.1 Load Country Codes
+
+```{r load_countries}
+# Load country codes from ISO 3166-1 standard
+raw_data <- read.csv(
+  paste0(
+    "https://raw.githubusercontent.com/lukes/",
+    "ISO-3166-Countries-with-Regional-Codes/",
+    "master/all/all.csv"
+  ),
+  stringsAsFactors = FALSE
+)
+
+# Create Nations lookup table
+nations <- data.frame(
+  Number = raw_data$country.code,
+  NameEN = raw_data$name,
+  Char2 = raw_data$alpha.2,
+  Char3 = raw_data$alpha.3,
+  stringsAsFactors = FALSE
+)
+
+# Apply GVC-specific corrections
+nations$NameEN[nations$Number == 626] <- "East Timor"
+nations$Char2[nations$Number == 626] <- "TP"
+nations$Char3[nations$Number == 626] <- "TMP"
+nations$Char3[nations$Number == 620] <- "POR"
+nations$Char3[nations$Number == 642] <- "ROM"
+nations$Char3[nations$Number == 756] <- "SUI"
+nations$NameEN[nations$Number == 248] <- "Aland Islands"
+
+# Add "Undefined" category
+nations <- rbind(
+  nations,
+  data.frame(
+    Number = 1000,
+    NameEN = "Undefined",
+    Char2 = "UD",
+    Char3 = "UND",
+    stringsAsFactors = FALSE
+  )
+)
+
+kable(head(nations, 10), caption = "Country Codes Sample")
+```
+
+## 2.2 Load Demographics Data
+
+**Demographics File Structure:**
+
+- 5,028 rows, each with unique UserID
+- UserID: Unique identifier for each player
+- SystemAgeAsOfReg: Player's age at registration
+- Gender: "M" or "F"
+- CountryID: ISO 3166-1 country code
+
+```{r load_demographics}
+demographics <- read.csv("csv/Demographics.csv", header = TRUE)
+
+# Merge with country names
+demographics <- demographics %>%
+  left_join(nations, by = c("CountryID" = "Number")) %>%
+  rename(Country = NameEN)
+
+# Display summary
+cat("Total players:", nrow(demographics), "\n")
+cat("Unique UserIDs:", length(unique(demographics$UserID)), "\n")
+
+kable(head(demographics, 10), caption = "Demographics Sample")
+```
+
+## 2.3 Load Cash Games Data
+
+**Cash Games File Structure:**
+
+- 51,763 daily records
+- 4,232 cash game players
+- UserID: Player identifier
+- Date: Date of activity
+- Windows: Number of sessions
+- StakesC: Cash put into pots (€)
+- WinningsC: Cash won from pots (€)
+
+```{r load_cash_games}
+raw_cash <- read.csv("csv/CashGames.csv", header = TRUE)
+
+cash_games <- data.frame(
+  UserID = raw_cash$UserID,
+  Date = as.Date(raw_cash$Date, format = "%Y-%m-%d"),
+  Windows = raw_cash$Windows,
+  StakesC = raw_cash$StakesC,
+  WinningsC = raw_cash$WinningsC,
+  stringsAsFactors = FALSE
+)
+
+# Order by UserID and Date
+cash_games <- cash_games[order(cash_games$UserID, cash_games$Date), ]
+
+# Display summary
+cat("Total records:", nrow(cash_games), "\n")
+cat("Unique players:", length(unique(cash_games$UserID)), "\n")
+
+kable(head(cash_games, 10), caption = "Cash Games Sample")
+```
+
+## 2.4 Load Tournaments Data
+
+**Tournaments File Structure:**
+
+- 82,831 daily records
+- 3,448 tournament players
+- UserID: Player identifier
+- Date: Date of activity
+- Trnmnts: Number of tournaments entered
+- StakesT: Tournament entry fees (€)
+- WinningsT: Tournament prizes (€)
+
+```{r load_tournaments}
+raw_tournaments <- read.csv("csv/Tournaments.csv", header = TRUE)
+
+tournaments <- data.frame(
+  UserID = raw_tournaments$UserID,
+  Date = as.Date(raw_tournaments$Date, format = "%Y-%m-%d"),
+  Trnmnts = raw_tournaments$Trnmnts,
+  StakesT = raw_tournaments$StakesT,
+  WinningsT = raw_tournaments$WinningsT,
+  stringsAsFactors = FALSE
+)
+
+# Order by UserID and Date
+tournaments <- tournaments[order(tournaments$UserID, tournaments$Date), ]
+
+# Display summary
+cat("Total records:", nrow(tournaments), "\n")
+cat("Unique players:", length(unique(tournaments$UserID)), "\n")
+
+kable(head(tournaments, 10), caption = "Tournaments Sample")
+```
+
+## 2.5 Load Deposits Data
+
+**Deposits File Structure:**
+
+- 295,119 transaction records
+- 5,008 unique players
+- UserID: Player identifier
+- DepositID: Transaction identifier
+- SummaryDate, ProcessDate, ProcessTime: Transaction timing
+- PayMeth, PayMethCat, CardType: Payment details
+- Amount: Deposit amount (€)
+- Status: "S" (successful) or "F" (failed)
+
+```{r load_deposits}
+deposits <- read.csv("csv/Deposits.csv", header = TRUE)
+
+# Display summary
+cat("Total deposits:", nrow(deposits), "\n")
+cat("Unique players:", length(unique(deposits$UserID)), "\n")
+cat("Successful deposits:", sum(deposits$Status == "S"), "\n")
+cat("Failed deposits:", sum(deposits$Status == "F"), "\n")
+
+kable(head(deposits, 10), caption = "Deposits Sample")
+```
+
+## 2.6 Load Withdrawals Data
+
+**Withdrawals File Structure:**
+
+- 32,307 transaction records
+- UserID: Player identifier
+- WithdrawalID: Transaction identifier
+- SummaryDate, ProcessDate, ProcessTime: Transaction timing
+- PayMeth, PayMethCat, CardType: Payment details
+- Amount: Withdrawal amount (€)
+- Status: "S" (successful), "F" (failed), or "R" (reversed)
+
+```{r load_withdrawals}
+withdrawals <- read.csv("csv/Withdrawals.csv", header = TRUE)
+
+# Display summary
+cat("Total withdrawals:", nrow(withdrawals), "\n")
+cat("Unique players:", length(unique(withdrawals$UserID)), "\n")
+cat("Successful withdrawals:", sum(withdrawals$Status == "S"), "\n")
+cat("Failed/Reversed:", sum(withdrawals$Status %in% c("F", "R")), "\n")
+
+kable(head(withdrawals, 10), caption = "Withdrawals Sample")
+```
+
+# 3. Descriptive Statistics
+
+## 3.1 Demographics Summary
+
+```{r demographics_summary}
+demo_stats <- demographics %>%
+  summarise(
+    N_Players = n(),
+    Mean_Age = mean(SystemAgeAsOfReg, na.rm = TRUE),
+    SD_Age = sd(SystemAgeAsOfReg, na.rm = TRUE),
+    Min_Age = min(SystemAgeAsOfReg, na.rm = TRUE),
+    Max_Age = max(SystemAgeAsOfReg, na.rm = TRUE),
+    Pct_Male = mean(Gender == "M") * 100,
+    Pct_Female = mean(Gender == "F") * 100
+  )
+
+kable(demo_stats, digits = 2, caption = "Demographics Summary Statistics")
+
+# Age distribution
+ggplot(demographics, aes(x = SystemAgeAsOfReg)) +
+  geom_histogram(binwidth = 5, fill = "steelblue", color = "white") +
+  labs(
+    title = "Age Distribution of Players",
+    x = "Age (years)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+# Gender distribution
+gender_counts <- demographics %>% count(Gender)
+ggplot(gender_counts, aes(x = Gender, y = n, fill = Gender)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = n), vjust = -0.5) +
+  labs(
+    title = "Gender Distribution",
+    x = "Gender",
+    y = "Count"
+  ) +
+  theme_minimal() +
+  scale_fill_manual(values = c("F" = "#E69F00", "M" = "#56B4E9"))
+
+# Top countries
+top_countries <- demographics %>%
+  filter(!is.na(Country)) %>%
+  count(Country, sort = TRUE) %>%
+  head(15)
+
+ggplot(top_countries, aes(x = reorder(Country, n), y = n)) +
+  geom_bar(stat = "identity", fill = "darkgreen") +
+  coord_flip() +
+  labs(
+    title = "Top 15 Countries by Player Count",
+    x = "Country",
+    y = "Number of Players"
+  ) +
+  theme_minimal()
+```
+
+## 3.2 Financial Activity Summary
+
+```{r financial_summary}
+# Aggregate deposits by player
+player_deposits <- deposits %>%
+  filter(Status == "S") %>%
+  group_by(UserID) %>%
+  summarise(
+    Total_Deposits = sum(Amount, na.rm = TRUE),
+    N_Deposits = n()
+  )
+
+# Aggregate withdrawals by player
+player_withdrawals <- withdrawals %>%
+  filter(Status == "S") %>%
+  group_by(UserID) %>%
+  summarise(
+    Total_Withdrawals = sum(Amount, na.rm = TRUE),
+    N_Withdrawals = n()
+  )
+
+# Summary statistics
+fin_stats <- data.frame(
+  Metric = c(
+    "Total Deposits",
+    "Successful Deposits",
+    "Total Withdrawals",
+    "Successful Withdrawals",
+    "Players with Deposits",
+    "Players with Withdrawals",
+    "Total Deposit Amount (€)",
+    "Total Withdrawal Amount (€)"
+  ),
+  Value = c(
+    nrow(deposits),
+    sum(deposits$Status == "S"),
+    nrow(withdrawals),
+    sum(withdrawals$Status == "S"),
+    length(unique(player_deposits$UserID)),
+    length(unique(player_withdrawals$UserID)),
+    sum(player_deposits$Total_Deposits),
+    sum(player_withdrawals$Total_Withdrawals)
+  )
+)
+
+kable(fin_stats, format.args = list(big.mark = ","),
+      caption = "Financial Activity Overview")
+
+# Distribution of deposit amounts
+ggplot(player_deposits, aes(x = Total_Deposits)) +
+  geom_histogram(bins = 50, fill = "forestgreen", color = "white") +
+  scale_x_log10(labels = comma) +
+  labs(
+    title = "Distribution of Total Deposits per Player",
+    subtitle = "Log scale",
+    x = "Total Deposits (€, log scale)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+# Distribution of withdrawal amounts
+ggplot(player_withdrawals, aes(x = Total_Withdrawals)) +
+  geom_histogram(bins = 50, fill = "darkred", color = "white") +
+  scale_x_log10(labels = comma) +
+  labs(
+    title = "Distribution of Total Withdrawals per Player",
+    subtitle = "Log scale",
+    x = "Total Withdrawals (€, log scale)",
+    y = "Count"
+  ) +
+  theme_minimal()
+```
+
+## 3.3 Gaming Activity Summary
+
+```{r gaming_summary}
+# Cash games summary
+cash_summary <- cash_games %>%
+  summarise(
+    Total_Records = n(),
+    Unique_Players = length(unique(UserID)),
+    Total_Stakes = sum(StakesC, na.rm = TRUE),
+    Total_Winnings = sum(WinningsC, na.rm = TRUE),
+    Net_Result = sum(WinningsC - StakesC, na.rm = TRUE)
+  )
+
+# Tournaments summary
+tournament_summary <- tournaments %>%
+  summarise(
+    Total_Records = n(),
+    Unique_Players = length(unique(UserID)),
+    Total_Stakes = sum(StakesT, na.rm = TRUE),
+    Total_Winnings = sum(WinningsT, na.rm = TRUE),
+    Net_Result = sum(WinningsT - StakesT, na.rm = TRUE)
+  )
+
+gaming_stats <- rbind(
+  data.frame(Game_Type = "Cash Games", cash_summary),
+  data.frame(Game_Type = "Tournaments", tournament_summary)
+)
+
+kable(gaming_stats, digits = 2, format.args = list(big.mark = ","),
+      caption = "Gaming Activity Summary")
+
+# Player participation
+participation <- data.frame(
+  Category = c(
+    "Cash Games Only",
+    "Tournaments Only",
+    "Both",
+    "Neither (Deposits Only)"
+  ),
+  Count = c(
+    length(setdiff(
+      unique(cash_games$UserID),
+      unique(tournaments$UserID)
+    )),
+    length(setdiff(
+      unique(tournaments$UserID),
+      unique(cash_games$UserID)
+    )),
+    length(intersect(
+      unique(cash_games$UserID),
+      unique(tournaments$UserID)
+    )),
+    nrow(demographics) - length(union(
+      unique(cash_games$UserID),
+      unique(tournaments$UserID)
+    ))
+  )
+)
+
+kable(participation, caption = "Player Participation Patterns")
+
+ggplot(participation, aes(x = reorder(Category, Count), y = Count)) +
+  geom_bar(stat = "identity", fill = "coral") +
+  coord_flip() +
+  geom_text(aes(label = Count), hjust = -0.2) +
+  labs(
+    title = "Player Participation Patterns",
+    x = "Category",
+    y = "Number of Players"
+  ) +
+  theme_minimal()
+```
+
+# 4. Hypothesis Testing
+
+## 4.1 Hypothesis 1: Linear Regression (Deposits vs Withdrawals)
+
+**Hypothesis:** There is a positive linear relationship between total
+deposits and total withdrawals.
+
+```{r hypothesis1}
+# Merge deposits and withdrawals
+deposit_withdrawal <- player_deposits %>%
+  inner_join(player_withdrawals, by = "UserID")
+
+# Scatter plot with log scales
+ggplot(
+  deposit_withdrawal,
+  aes(x = Total_Deposits, y = Total_Withdrawals)
+) +
+  geom_point(alpha = 0.4, color = "darkgreen", size = 1.5) +
+  geom_smooth(method = "lm", color = "red", se = TRUE, linewidth = 1) +
+  scale_x_log10(labels = comma, breaks = log_breaks(n = 6)) +
+  scale_y_log10(labels = comma, breaks = log_breaks(n = 6)) +
+  labs(
+    title = "Deposits vs Withdrawals",
+    subtitle = "Log-log scale to visualize full range",
+    x = "Total Deposits (€, log scale)",
+    y = "Total Withdrawals (€, log scale)"
+  ) +
+  theme_minimal()
+
+# Linear regression
+model1 <- lm(Total_Withdrawals ~ Total_Deposits, data = deposit_withdrawal)
+
+# Display results
+cat("\n=== Linear Regression Results ===\n")
+print(summary(model1))
+
+# Correlation
+correlation <- cor(
+  deposit_withdrawal$Total_Deposits,
+  deposit_withdrawal$Total_Withdrawals
+)
+cat("\nPearson Correlation:", round(correlation, 4), "\n")
+```
+
+## 4.2 Hypothesis 2: Logistic Regression (Demographics vs Game Type)
+
+**Hypothesis:** Player demographics (age and gender) can predict game type
+preference (cash games vs tournaments).
+
+```{r hypothesis2}
+# Create player types dataset
+cash_players <- data.frame(
+  UserID = unique(cash_games$UserID),
+  PlaysCash = 1
+)
+tournament_players <- data.frame(
+  UserID = unique(tournaments$UserID),
+  PlaysTournaments = 1
+)
+
+player_types <- demographics %>%
+  left_join(cash_players, by = "UserID") %>%
+  left_join(tournament_players, by = "UserID") %>%
+  mutate(
+    PlaysCash = ifelse(is.na(PlaysCash), 0, PlaysCash),
+    PlaysTournaments = ifelse(is.na(PlaysTournaments), 0, PlaysTournaments),
+    GameType = case_when(
+      PlaysCash == 1 & PlaysTournaments == 0 ~ "Cash Only",
+      PlaysCash == 0 & PlaysTournaments == 1 ~ "Tournaments Only",
+      PlaysCash == 1 & PlaysTournaments == 1 ~ "Both",
+      TRUE ~ "Neither"
+    ),
+    PrimaryGameType = case_when(
+      PlaysCash == 1 & PlaysTournaments == 0 ~ 1,  # Cash
+      PlaysCash == 0 & PlaysTournaments == 1 ~ 0,  # Tournaments
+      TRUE ~ NA_real_
+    )
+  ) %>%
+  filter(!is.na(PrimaryGameType))  # Only players with clear preference
+
+# Visualization
+ggplot(
+  player_types,
+  aes(x = GameType, fill = Gender)
+) +
+  geom_bar(position = "dodge") +
+  labs(
+    title = "Game Type Preference by Gender",
+    x = "Game Type",
+    y = "Count"
+  ) +
+  theme_minimal() +
+  scale_fill_manual(values = c("F" = "#E69F00", "M" = "#56B4E9"))
+
+# Split data: 70% training, 30% testing
+set.seed(42)
+train_indices <- sample(
+  1:nrow(player_types),
+  size = floor(0.7 * nrow(player_types))
+)
+train_data <- player_types[train_indices, ]
+test_data <- player_types[-train_indices, ]
+
+# Logistic regression model
+model2 <- glm(
+  PrimaryGameType ~ SystemAgeAsOfReg + Gender,
+  data = train_data,
+  family = binomial
+)
+
+# Display results
+cat("\n=== Logistic Regression Results ===\n")
+print(summary(model2))
+
+# Predictions on test data
+test_predictions <- predict(model2, newdata = test_data, type = "response")
+test_predicted_class <- ifelse(test_predictions > 0.5, 1, 0)
+
+# Accuracy
+accuracy <- mean(test_predicted_class == test_data$PrimaryGameType)
+cat("\nTest Set Accuracy:", round(accuracy * 100, 2), "%\n")
+
+# Confusion matrix
+confusion <- table(
+  Predicted = test_predicted_class,
+  Actual = test_data$PrimaryGameType
+)
+cat("\nConfusion Matrix:\n")
+print(confusion)
+```
+
+# 5. Conclusions
+
+This analysis explored online poker player behavior using real transaction
+and gameplay data from 5,028 players. Key findings include:
+
+1. **Demographics**: The player base is predominantly male (shown in
+   descriptive statistics) with a mean age in the 30s.
+
+2. **Financial Patterns**: A significant positive correlation exists between
+   deposits and withdrawals, supporting Hypothesis 1.
+
+3. **Game Preferences**: Player demographics show some predictive power for
+   game type preferences, though the relationship may be modest.
+
+4. **Player Engagement**: Different player types exist (cash only,
+   tournaments only, both, neither), suggesting diverse gambling strategies.
+
+Future work could explore temporal patterns, player clustering, and more
+sophisticated modeling approaches.
+
+---
+
+*Analysis completed on `r Sys.Date()`*

@@ -1,7 +1,71 @@
 ---
 title: "Statistical Analysis of Player Behaviour in Online Poker"
-authors: "Prokhorov Roman, Holovin Maxim, Pasichnyk Nazar"
+author: "Roman Prokhorov, Maksym Holovin, Nazar Pasichnyk"
+output:
+  html_document: default
+  pdf_document: default
 ---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE, warning = FALSE, message = FALSE,
+  fig.width = 8, fig.height = 5
+)
+library(ggplot2)
+library(dplyr)
+library(knitr)
+library(gridExtra)
+```
+
+```{r load_data, include=FALSE}
+# Load all datasets
+demographics <- read.csv("csv/Demographics.csv")
+cash_games <- read.csv("csv/CashGames.csv")
+tournaments <- read.csv("csv/Tournaments.csv")
+deposits <- read.csv("csv/Deposits.csv")
+withdrawals <- read.csv("csv/Withdrawals.csv")
+
+# Load country codes from ISO 3166-1 standard
+raw_data <- read.csv(
+  paste0(
+    "https://raw.githubusercontent.com/lukes/",
+    "ISO-3166-Countries-with-Regional-Codes/",
+    "master/all/all.csv"
+  ),
+  stringsAsFactors = FALSE
+)
+
+# Create Nations lookup table
+nations <- data.frame(
+  Number = raw_data$country.code, NameEN = raw_data$name,
+  Char2 = raw_data$alpha.2, Char3 = raw_data$alpha.3,
+  stringsAsFactors = FALSE
+)
+
+# Apply GVC-specific corrections (as noted in data documentation)
+nations$NameEN[nations$Number == 626] <- "East Timor"
+nations$Char2[nations$Number == 626] <- "TP"
+nations$Char3[nations$Number == 626] <- "TMP"
+nations$Char3[nations$Number == 620] <- "POR"
+nations$Char3[nations$Number == 642] <- "ROM"
+nations$Char3[nations$Number == 756] <- "SUI"
+nations$NameEN[nations$Number == 248] <- "Aland Islands"
+
+# Add "Undefined" category
+nations <- rbind(
+  nations,
+  data.frame(
+    Number = 1000, NameEN = "Undefined",
+    Char2 = "UD", Char3 = "UND",
+    stringsAsFactors = FALSE
+  )
+)
+
+# Merge country names with demographics
+demographics <- demographics %>%
+  left_join(nations, by = c("CountryID" = "Number")) %>%
+  rename(Country = NameEN)
+```
 
 ## 1. Research Topic
 We aim to analyze patterns in online poker player behavior using real transaction and gameplay data.
@@ -9,40 +73,262 @@ Our study will examine relationships between player demographics, betting patter
 different player types and their gambling strategies.
 
 ## 2. Data Source
-Source: The Transparency Project (www.thetransparencyproject.org)  
-Provider: Division on Addiction, Cambridge Health Alliance, Harvard Medical School  
-Dataset: "Second Session at the Virtual Poker Table"  
-Reference: Tom, M. A., et al. (2022). Second Session at the Virtual Poker Table:
-A Contemporary Study of Actual Online Poker Activity. Journal of Gambling Studies. https://doi.org/10.1007/s10899-022-10147-1  
-Sample: 5,028 online poker players who registered in February 2015
+
+**Source:** The Transparency Project (www.thetransparencyproject.org)
+
+**Provider:** Division on Addiction, Cambridge Health Alliance, Harvard Medical School
+
+**Dataset:** "Second Session at the Virtual Poker Table"
+
+**Sample Size:** 5,028 online poker players who registered in February 2015
+
+**Reference:** Tom, M. A., et al. (2022). Second Session at the Virtual Poker Table: A Contemporary Study of Actual Online Poker Activity. *Journal of Gambling Studies*. https://doi.org/10.1007/s10899-022-10147-1
 
 ## 3. Data Description
 The dataset consists of five interconnected CSV files:
-- Demographics (5,028 players): Age, Gender, Country of residence
-- Cash Games (51,763 daily records): Stakes wagered, winnings, number of sessions
-- Tournaments (82,831 daily records): Entry fees, prizes, number of tournaments
-- Deposits (295,119 transactions): Amount, payment method, transaction status
-- Withdrawals (32,307 transactions): Amount, payment method, transaction status
+
+- **Demographics** (5,028 players): Age, Gender, Country of residence (encoded using ISO 3166-1 country codes)
+
+- **Cash Games** (51,763 daily records): Stakes wagered, winnings, number of sessions
+
+- **Tournaments** (82,831 daily records): Entry fees, prizes, number of tournaments
+
+- **Deposits** (295,119 transactions): Amount, payment method, transaction status
+
+- **Withdrawals** (32,307 transactions): Amount, payment method, transaction status
 
 Key variables include player demographics, daily gambling activity (stakes and winnings),
-and financial transactions (deposits and withdrawals in Euros).
+and financial transactions (deposits and withdrawals in Euros). Country information is mapped from numeric ISO 3166-1 codes to country names for analysis.
+
+### Sample Data Structure
+
+```{r data_samples}
+# Demographics sample - show with country names
+kable(
+  head(
+    demographics[, c("UserID", "SystemAgeAsOfReg", "Gender", "Country")],
+    5
+  ),
+  caption = "Demographics Sample (with Country Names)",
+  col.names = c("User ID", "Age", "Gender", "Country")
+)
+
+# Deposits sample
+kable(
+  head(deposits[, c("UserID", "Amount", "Status", "PayMeth")], 5),
+  caption = "Deposits Sample",
+  col.names = c("User ID", "Amount (€)", "Status", "Payment Method")
+)
+
+# Cash Games sample
+kable(
+  head(cash_games, 5), caption = "Cash Games Sample",
+  col.names = c("User ID", "Date", "Sessions", "Stakes (€)", "Winnings (€)")
+)
+
+# Top 10 countries by player count
+top_countries <- demographics %>%
+  filter(!is.na(Country)) %>%
+  count(Country, sort = TRUE) %>%
+  head(10)
+
+kable(
+  top_countries, caption = "Top 10 Countries by Player Count",
+  col.names = c("Country", "Number of Players")
+)
+```
 
 ## 4. Preliminary Hypotheses
 
 ### Hypothesis 1 (Linear Regression)
-There is a positive linear relationship between the total amount a player deposits and the total amount they withdraw.
-We expect that players who invest more money into their accounts will also cash out larger amounts,
-indicating either successful play or cycling of funds. We will use linear regression analysis to test this relationship
-and calculate the correlation coefficient.
+There is a positive linear relationship between the number of bets a player
+places and their total stakes wagered in cash games. We hypothesize that
+players who place more bets will wager larger total amounts, as betting
+volume directly contributes to overall gambling activity. We will use linear
+regression analysis to test this relationship, calculate the correlation
+coefficient, and assess whether the slope is significantly different from
+zero.
 
 ### Hypothesis 2 (Logistic Regression/Classification)
-Player demographic characteristics (age and gender) can predict whether a player primarily engages in cash games versus
-tournaments. We hypothesize that younger players and male players are more likely to prefer cash games over tournaments.
-We will develop a logistic regression model, train it on 70% of the data, and test its classification accuracy on the remaining
-30%.
+Player demographic characteristics (age and gender) can predict whether a
+player primarily engages in cash games versus tournaments. We hypothesize
+that younger players and male players are more likely to prefer cash games
+over tournaments. We will develop a logistic regression model, train it on
+70% of the data, and test its classification accuracy on the remaining 30%.
 
 ## 5. Initial Insights
-Preliminary exploration reveals that only 1,827 of 5,008 players (36%) made withdrawals, suggesting many players experience 
-net losses. The dataset shows distinct player groups: 4,232 played cash games and 3,448 played tournaments, with some overlap.
-The rich temporal structure allows for analysis of betting patterns over time, and multiple grouping variables enable comparative
-statistical tests between different player segments.
+
+### Descriptive Statistics
+
+```{r descriptive_stats}
+# Player demographics summary
+demo_summary <- demographics %>%
+  summarise(
+    N = n(),
+    Mean_Age = mean(SystemAgeAsOfReg, na.rm = TRUE),
+    SD_Age = sd(SystemAgeAsOfReg, na.rm = TRUE),
+    Male_Pct = mean(Gender == "M") * 100
+  )
+
+kable(demo_summary, digits = 2,
+      caption = "Demographics Summary",
+      col.names = c("N Players", "Mean Age", "SD Age", "% Male"))
+
+# Financial activity summary
+fin_summary <- data.frame(
+  Metric = c("Total Deposits", "Successful Deposits", "Total Withdrawals",
+             "Successful Withdrawals", "Players with Withdrawals"),
+  Value = c(
+    nrow(deposits),
+    sum(deposits$Status == "S"),
+    nrow(withdrawals),
+    sum(withdrawals$Status == "S"),
+    length(unique(withdrawals$UserID[withdrawals$Status == "S"]))
+  )
+)
+kable(fin_summary, caption = "Financial Activity Overview")
+```
+
+### Key Observations
+
+```{r key_insights}
+# Calculate key metrics
+n_cash_players <- length(unique(cash_games$UserID))
+n_tournament_players <- length(unique(tournaments$UserID))
+n_withdrawal_players <- length(
+  unique(withdrawals$UserID[withdrawals$Status == "S"])
+)
+withdrawal_rate <- round(
+  n_withdrawal_players / nrow(demographics) * 100, 1
+)
+
+# Aggregate deposits and withdrawals by player
+player_deposits <- deposits %>%
+  filter(Status == "S") %>%
+  group_by(UserID) %>%
+  summarise(Total_Deposits = sum(Amount, na.rm = TRUE))
+
+player_withdrawals <- withdrawals %>%
+  filter(Status == "S") %>%
+  group_by(UserID) %>%
+  summarise(Total_Withdrawals = sum(Amount, na.rm = TRUE))
+```
+
+Preliminary exploration reveals several important patterns:
+
+- Only **`r n_withdrawal_players`** of **`r nrow(demographics)`** players
+  (**`r withdrawal_rate`%**) made successful withdrawals, suggesting many
+  players experience net losses
+- **`r n_cash_players`** players engaged in cash games and
+  **`r n_tournament_players`** played tournaments, with some overlap
+- The dataset shows high variability in betting amounts and player
+  engagement levels
+- Rich temporal structure (daily records from February 2015) allows for
+  analysis of betting patterns over time
+
+### Exploratory Visualizations
+
+```{r exploratory_plots, fig.width=10, fig.height=6}
+# Age distribution
+p1 <- ggplot(demographics, aes(x = SystemAgeAsOfReg)) +
+  geom_histogram(binwidth = 5, fill = "steelblue", color = "white") +
+  labs(title = "Player Age Distribution", x = "Age", y = "Count") +
+  theme_minimal()
+
+# Gender distribution
+gender_counts <- demographics %>% count(Gender)
+p2 <- ggplot(gender_counts, aes(x = Gender, y = n, fill = Gender)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = n), vjust = -0.5) +
+  labs(title = "Gender Distribution", x = "Gender", y = "Count") +
+  theme_minimal() +
+  scale_fill_manual(values = c("F" = "#E69F00", "M" = "#56B4E9"))
+
+# Number of bets vs total stakes (for hypothesis 1)
+player_betting_volume <- cash_games %>%
+  group_by(UserID) %>%
+  summarise(
+    Number_of_Bets = n(),
+    Total_Stakes = sum(StakesC, na.rm = TRUE)
+  ) %>%
+  filter(
+    Number_of_Bets >= 20,
+    Total_Stakes > 50
+  )
+
+# Trim outliers (5th-95th percentile)
+bets_limits <- quantile(player_betting_volume$Number_of_Bets, c(0.05, 0.95))
+stakes_limits <- quantile(player_betting_volume$Total_Stakes, c(0.05, 0.95))
+trimmed_volume <- player_betting_volume %>%
+  filter(
+    Number_of_Bets >= bets_limits[1] &
+      Number_of_Bets <= bets_limits[2],
+    Total_Stakes >= stakes_limits[1] & Total_Stakes <= stakes_limits[2]
+  )
+
+p3 <- ggplot(
+  trimmed_volume,
+  aes(x = Number_of_Bets, y = Total_Stakes)
+) +
+  geom_point(alpha = 0.5, color = "steelblue", size = 2) +
+  geom_smooth(method = "lm", color = "red", se = TRUE, linewidth = 1.3) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(
+    title = "Number of Bets vs Total Stakes Wagered (Hypothesis 1)",
+    subtitle = sprintf(
+      "N = %d players | More bets = higher total stakes",
+      nrow(trimmed_volume)
+    ),
+    x = "Number of Bets Placed",
+    y = "Total Stakes Wagered (€)"
+  ) +
+  theme_minimal() +
+  theme(plot.subtitle = element_text(size = 9, color = "gray40"))
+
+# Game type preference by demographics (for hypothesis 2)
+cash_players <- data.frame(
+  UserID = unique(cash_games$UserID),
+  PlaysCash = 1
+)
+tournament_players <- data.frame(
+  UserID = unique(tournaments$UserID),
+  PlaysTournaments = 1
+)
+
+player_types <- demographics %>%
+  left_join(cash_players, by = "UserID") %>%
+  left_join(tournament_players, by = "UserID") %>%
+  mutate(
+    PlaysCash = ifelse(is.na(PlaysCash), 0, PlaysCash),
+    PlaysTournaments = ifelse(is.na(PlaysTournaments), 0, PlaysTournaments),
+    GameType = case_when(
+      PlaysCash == 1 & PlaysTournaments == 0 ~ "Cash Only",
+      PlaysCash == 0 & PlaysTournaments == 1 ~ "Tournaments Only",
+      PlaysCash == 1 & PlaysTournaments == 1 ~ "Both",
+      TRUE ~ "Neither"
+    )
+  )
+
+p4 <- ggplot(
+  player_types %>% filter(GameType != "Neither"),
+  aes(x = GameType, fill = Gender)
+) +
+  geom_bar(position = "dodge") +
+  labs(
+    title = "Type Preference by Gender (Hypothesis 2 Motivation)",
+    x = "Game Type", y = "Count"
+  ) +
+  theme_minimal() +
+  scale_fill_manual(values = c("F" = "#E69F00", "M" = "#56B4E9"))
+
+# Arrange plots
+grid.arrange(p1, p2, ncol = 2)
+grid.arrange(p3, p4, ncol = 2)
+```
+
+These visualizations motivate our hypotheses and demonstrate interesting
+patterns in the data that warrant statistical testing. The relationship
+between number of bets and total stakes will quantify how betting volume
+contributes to overall gambling activity, testing our first hypothesis. The
+game type preferences show potential demographic differences worth exploring
+in our second hypothesis through logistic regression.
