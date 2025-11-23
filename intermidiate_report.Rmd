@@ -15,7 +15,7 @@ knitr::opts_chunk$set(
 
 # Install gridExtra if not already installed
 if (!require("gridExtra", quietly = TRUE)) {
-  install.packages("gridExtra", repos = "[https://cran.rstudio.com/](https://cran.rstudio.com/)")
+  install.packages("gridExtra", repos = "https://cran.rstudio.com/")
 }
 
 library(ggplot2)
@@ -150,40 +150,36 @@ kable(
 
 ## 4. Preliminary Hypotheses (Revised $\beta_0$ Explanation)
 
-### Hypothesis 1 (Linear Regression)
-**Research Question:** Does the volume of betting activity (frequency) predict the total financial magnitude of the gambling?
+### Hypothesis 1 (Two-Sample T-Test)
 
-We define $X$ as the number of bets placed and $Y$ as the total stakes wagered in cash games. The linear regression model is represented as:
-$$Y = \beta_0 + \beta_1 X + \epsilon$$
-Where:
+**Research Question:** Is there a significant difference in the mean total stakes wagered between players who bet frequently (High-Frequency) and players who bet infrequently (Low-Frequency)?
 
-* **$\beta_0$ (Y-Intercept):** Mathematically, this is the predicted total stakes for a player who places zero bets ($X=0$). **In this context, where all included players have placed bets, it primarily serves as a mathematical constant to anchor the regression line, not a meaningful predictor of real-world stakes.**
+We define two groups based on the median number of bets:
 
-* **$\beta_1$ (Slope Coefficient):** The **expected change** in total stakes for every single additional bet placed. This is the **effect size** we are testing.
+- **Group 1 (Low-Frequency Bettors):** Players with a number of bets below the median ($\mu_{low}$)
+- **Group 2 (High-Frequency Bettors):** Players with a number of bets at or above the median ($\mu_{high}$)
 
-* **$\epsilon$ (Error Term):** The **unexplained variation** in total stakes that is not accounted for by the number of bets (e.g., luck, table limits, or unobserved factors).
+The T-test compares the mean total stakes ($Y$) between these two population groups.
 
-
-* **$H_0$ (Null Hypothesis):** $\beta_1 = 0$. There is no linear relationship between the number of bets and total stakes.
-
-* **$H_a$ (Alternative Hypothesis):** $\beta_1 \neq 0$. There is a significant linear relationship.
+* **$H_0$ (Null Hypothesis):** $\mu_{high} = \mu_{low}$. The mean total stakes is the same for both groups.
+* **$H_a$ (Alternative Hypothesis):** $\mu_{high} > \mu_{low}$. High-Frequency bettors have a significantly higher mean total stakes than Low-Frequency bettors.
 
 ---
 
 ### Hypothesis 2 (Multiple Linear Regression)
+
 **Research Question:** Do demographic characteristics (Age and Gender) predict the total amount a player wagers?
 
 We define $Y$ as the Total Stakes Wagered, $X_1$ as Age, and $X_2$ as Gender (encoded as 0 for Female, 1 for Male). The model is:
+
 $$Y = \beta_0 + \beta_1(Age) + \beta_2(Gender) + \epsilon$$
+
 Where:
 
-* **$\beta_0$ (Y-Intercept):** Mathematically, this is the predicted total stakes (€) when all predictor variables are zero (Age=0, Gender=0). **Since a 0-year-old cannot gamble, this term provides no practical interpretation and should be understood only as the necessary constant to align the fitted model with the observed data.**
-
-* **$\beta_1$ (Age Coefficient):** The **change** in total stakes for every one-year increase in age, *holding gender constant*.
-
-* **$\beta_2$ (Gender Coefficient):** The **difference** in total stakes between male players and the baseline female players (when controlling for age).
-
-* **$\epsilon$ (Error Term):** The **unexplained variation** in total stakes not accounted for by Age and Gender.
+* **$\beta_0$ (Y-Intercept):** Mathematically, this is the predicted total stakes (€) when all predictor variables are zero (Age=0, Gender=0). Since a 0-year-old cannot gamble, this term provides no practical interpretation and should be understood only as the necessary constant to align the fitted model with the observed data.
+* **$\beta_1$ (Age Coefficient):** The change in total stakes for every one-year increase in age, holding gender constant.
+* **$\beta_2$ (Gender Coefficient):** The difference in total stakes between male players and the baseline female players (when controlling for age).
+* **$\epsilon$ (Error Term):** The unexplained variation in total stakes not accounted for by Age and Gender.
 
 * **$H_0$ (Null Hypothesis):** $\beta_1 = 0$ and $\beta_2 = 0$. Age and Gender have no linear relationship with total stakes wagered.
 * **$H_a$ (Alternative Hypothesis):** $\beta_1 < 0$ and $\beta_2 > 0$.
@@ -192,24 +188,23 @@ Where:
 
 ---
 
-### Why We Include $\beta_0$ and $\epsilon$ in the Model
+### Why We Include $\beta_0$ and $\epsilon$ in the Multiple Regression Model (Hypothesis 2)
 
-Understanding the roles of the constant ($\beta_0$) and the error term ($\epsilon$) is crucial for interpreting the model:
+Understanding the roles of the constant ($\beta_0$) and the error term ($\epsilon$) is crucial for interpreting the multiple regression model (Hypothesis 2):
 
 #### 1. The Role of $\beta_0$ (The Intercept)
 
 Even when the literal interpretation of $\beta_0$ is meaningless (like predicting the stakes of a 0-year-old), the term is crucial for the mathematical integrity of the model.
 
-1.  **It Anchors the Line:** $\beta_0$ allows the regression line (or plane, in the case of multiple regression) to be shifted up or down so that it passes through the **mean** of the data. Without it, the line would be forced to start at the origin (0, 0), which would almost certainly result in a terrible fit for the actual data points.
-2.  **It Isolates the Effects of the Slopes:** In a multiple regression (Hypothesis 2), the goal is to determine the effect of Age ($\beta_1$) and Gender ($\beta_2$) **independently**. $\beta_0$ absorbs the overall average stakes and ensures that the coefficients ($\beta_1$ and $\beta_2$) truly represent the *change* associated with their respective variables, rather than compensating for a general baseline value.
+* **It Anchors the Line:** $\beta_0$ allows the regression line (or plane) to be shifted up or down so that it passes through the mean of the data. Without it, the line would be forced to start at the origin (0, 0), which would almost certainly result in a terrible fit for the actual data points.
+* **It Isolates the Effects of the Slopes:** In a multiple regression, the goal is to determine the effect of Age ($\beta_1$) and Gender ($\beta_2$) independently. $\beta_0$ absorbs the overall average stakes and ensures that the coefficients ($\beta_1$ and $\beta_2$) truly represent the change associated with their respective variables, rather than compensating for a general baseline value.
 
 #### 2. The Role of $\epsilon$ (The Error Term)
 
-The error term ($\epsilon$) is equally crucial because it acknowledges that our model is an **imperfect representation of reality**.
+The error term ($\epsilon$) is equally crucial because it acknowledges that our model is an imperfect representation of reality.
 
-1.  **It Captures Missing Information:** $\epsilon$ represents all the variation in total stakes that is **not explained** by our chosen predictor variables (Age, Gender, or Number of Bets). This includes factors like individual luck, specific poker strategy, time spent online, or the player's emotional state.
-2.  **It Satisfies Statistical Assumptions:** In linear regression, we must assume this $\epsilon$ (the difference between the actual stakes and the predicted stakes) is purely **random noise** and not systematically related to our predictor variables. This assumption is fundamental for calculating reliable $p$-values and confidence intervals, which we use to determine if the effects of our $\beta$ coefficients are statistically significant.
-
+* **It Captures Missing Information:** $\epsilon$ represents all the variation in total stakes that is not explained by our chosen predictor variables (Age and Gender). This includes factors like individual luck, specific poker strategy, time spent online, or the player's emotional state.
+* **It Satisfies Statistical Assumptions:** In linear regression, we must assume this $\epsilon$ (the difference between the actual stakes and the predicted stakes) is purely random noise and not systematically related to our predictor variables. This assumption is fundamental for calculating reliable $p$-values and confidence intervals, which we use to determine if the effects of our $\beta$ coefficients are statistically significant.
 ## 5\. Initial Insights
 
 ### Descriptive Statistics
@@ -295,6 +290,9 @@ player_betting_volume <- cash_games %>%
     Total_Stakes > 50
   )
 
+# Calculate median number of bets for grouping
+median_bets <- median(player_betting_volume$Number_of_Bets, na.rm = TRUE)
+
 # Join with demographics for Hypothesis 2
 plot_data <- player_betting_volume %>%
   inner_join(demographics, by = "UserID")
@@ -308,20 +306,49 @@ trimmed_data <- plot_data %>%
     Number_of_Bets >= bets_limits[1] &
       Number_of_Bets <= bets_limits[2],
     Total_Stakes >= stakes_limits[1] & Total_Stakes <= stakes_limits[2]
+  ) %>%
+  # NEW: Create frequency groups based on the pre-calculated median
+  mutate(
+      FrequencyGroup = ifelse(Number_of_Bets >= median_bets, "High-Frequency", "Low-Frequency")
   )
 
-# Plot 3: Hypothesis 1 (Bets vs Stakes)
-p3 <- ggplot(trimmed_data, aes(x = Number_of_Bets, y = Total_Stakes)) +
-  geom_point(alpha = 0.4, color = "steelblue", size = 1.5) +
-  geom_smooth(method = "lm", color = "red", se = TRUE, linewidth = 1) +
-  scale_y_continuous(labels = scales::comma) +
+
+# Calculate summary statistics for Hypothesis 1 groups
+h1_stats <- trimmed_data %>%
+  group_by(FrequencyGroup) %>%
+  summarise(
+    Mean_Stakes = mean(Total_Stakes, na.rm = TRUE),
+    Median_Stakes = median(Total_Stakes, na.rm = TRUE),
+    SD_Stakes = sd(Total_Stakes, na.rm = TRUE),
+    N = n()
+  )
+
+# Plot 3: Hypothesis 1 (T-Test visualization - Stakes by Group)
+p3 <- ggplot(trimmed_data, aes(x = FrequencyGroup, y = Total_Stakes, fill = FrequencyGroup)) +
+  geom_violin(alpha = 0.4, trim = FALSE) +
+  geom_boxplot(width = 0.3, fill = "white", alpha = 0.8, outlier.alpha = 0.3) +
+  stat_summary(fun = mean, geom = "point", shape = 23, size = 4, 
+               fill = "red", color = "darkred", stroke = 1.5) +
+  stat_summary(fun = mean, geom = "text", 
+               aes(label = paste0("Mean: €", format(round(after_stat(y), 0), big.mark = ","))),
+               vjust = -1.5, size = 3.5, fontface = "bold", color = "darkred") +
+  scale_y_continuous(labels = scales::comma, 
+                     breaks = seq(0, 150000, 25000),
+                     limits = c(0, NA)) +
+  scale_fill_manual(values = c("Low-Frequency" = "#E69F00", "High-Frequency" = "#56B4E9")) +
   labs(
-    title = "Hypothesis 1: Bets vs. Total Stakes",
-    subtitle = "Testing positive linear relationship",
-    x = "Frequency (Number of Bets)",
-    y = "Magnitude (Total Stakes €)"
+    title = "Hypothesis 1: Total Stakes by Betting Frequency",
+    subtitle = "Comparing mean stakes between High-Frequency and Low-Frequency bettors\nViolin shows distribution density | Box shows quartiles | Diamond shows mean",
+    x = "Betting Frequency Group (Split by Median Bets)",
+    y = "Total Stakes Wagered (€)"
   ) +
-  theme_minimal()
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "none",
+    plot.subtitle = element_text(size = 9, color = "gray30"),
+    axis.text.x = element_text(size = 11, face = "bold"),
+    axis.title = element_text(size = 11, face = "bold")
+  )
 
 # Plot 4: Hypothesis 2 (Age + Gender vs Stakes)
 # We plot Age vs Stakes, colored by Gender, with trend lines for each
@@ -344,4 +371,24 @@ grid.arrange(p1, p2, ncol = 2)
 grid.arrange(p3, p4, ncol = 2)
 ```
 
-These visualizations motivate our hypotheses and demonstrate interesting patterns in the data that warrant statistical testing. The relationship between number of bets and total stakes ($P3$) visually confirms a strong correlation, setting up our first linear regression. The demographic plot ($P4$) allows us to visually inspect the slopes for Age and Gender simultaneously; if our hypothesis is correct, we expect to see the regression lines trending downwards (higher stakes for lower age) and the "Male" line positioned higher than the "Female" line.
+**Interpretation of Plot 3 (Hypothesis 1):**
+
+```{r h1_interpretation}
+kable(h1_stats, 
+      digits = 0,
+      format.args = list(big.mark = ","),
+      caption = "Summary Statistics: Total Stakes by Betting Frequency",
+      col.names = c("Group", "Mean Stakes (€)", "Median Stakes (€)", "SD Stakes (€)", "N Players"))
+```
+
+The visualization reveals several key patterns supporting our hypothesis:
+
+* **Distribution Shape:** The violin plots show the probability density of stakes for each group. High-Frequency bettors have a wider distribution, indicating greater variability in betting amounts.
+
+* **Central Tendency:** The red diamond marks the mean total stakes for each group. Visual inspection suggests High-Frequency bettors wager substantially more on average than Low-Frequency bettors.
+
+* **Spread:** The box plots display quartiles (bottom, middle, and top of the box represent 25th, 50th, and 75th percentiles). The white boxes show that High-Frequency bettors have both higher medians and greater spread in their betting behavior.
+
+* **Outliers:** Individual points outside the "whiskers" represent outliers. Both groups contain some extreme bettors, but High-Frequency bettors show more variability overall.
+
+This visual pattern strongly suggests that betting frequency and total stakes are related, motivating our statistical test to determine if the difference in means is statistically significant.
