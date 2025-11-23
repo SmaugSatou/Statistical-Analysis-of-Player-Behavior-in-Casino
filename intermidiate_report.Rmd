@@ -1,3 +1,4 @@
+
 ---
 title: "Statistical Analysis of Player Behaviour in Online Poker"
 author: "Roman Prokhorov, Maksym Holovin, Nazar Pasichnyk"
@@ -11,6 +12,12 @@ knitr::opts_chunk$set(
   echo = FALSE, warning = FALSE, message = FALSE,
   fig.width = 8, fig.height = 5
 )
+
+# Install gridExtra if not already installed
+if (!require("gridExtra", quietly = TRUE)) {
+  install.packages("gridExtra", repos = "[https://cran.rstudio.com/](https://cran.rstudio.com/)")
+}
+
 library(ggplot2)
 library(dplyr)
 library(knitr)
@@ -67,12 +74,13 @@ demographics <- demographics %>%
   rename(Country = NameEN)
 ```
 
-## 1. Research Topic
+## 1\. Research Topic
+
 We aim to analyze patterns in online poker player behavior using real transaction and gameplay data.
 Our study will examine relationships between player demographics, betting patterns, and financial outcomes to understand
 different player types and their gambling strategies.
 
-## 2. Data Source
+## 2\. Data Source
 
 **Source:** The Transparency Project (www.thetransparencyproject.org)
 
@@ -84,18 +92,19 @@ different player types and their gambling strategies.
 
 **Reference:** Tom, M. A., et al. (2022). Second Session at the Virtual Poker Table: A Contemporary Study of Actual Online Poker Activity. *Journal of Gambling Studies*. https://doi.org/10.1007/s10899-022-10147-1
 
-## 3. Data Description
+## 3\. Data Description
+
 The dataset consists of five interconnected CSV files:
 
-- **Demographics** (5,028 players): Age, Gender, Country of residence (encoded using ISO 3166-1 country codes)
+  - **Demographics** (5,028 players): Age, Gender, Country of residence (encoded using ISO 3166-1 country codes)
 
-- **Cash Games** (51,763 daily records): Stakes wagered, winnings, number of sessions
+  - **Cash Games** (51,763 daily records): Stakes wagered, winnings, number of sessions
 
-- **Tournaments** (82,831 daily records): Entry fees, prizes, number of tournaments
+  - **Tournaments** (82,831 daily records): Entry fees, prizes, number of tournaments
 
-- **Deposits** (295,119 transactions): Amount, payment method, transaction status
+  - **Deposits** (295,119 transactions): Amount, payment method, transaction status
 
-- **Withdrawals** (32,307 transactions): Amount, payment method, transaction status
+  - **Withdrawals** (32,307 transactions): Amount, payment method, transaction status
 
 Key variables include player demographics, daily gambling activity (stakes and winnings),
 and financial transactions (deposits and withdrawals in Euros). Country information is mapped from numeric ISO 3166-1 codes to country names for analysis.
@@ -138,25 +147,70 @@ kable(
 )
 ```
 
-## 4. Preliminary Hypotheses
+
+## 4. Preliminary Hypotheses (Revised $\beta_0$ Explanation)
 
 ### Hypothesis 1 (Linear Regression)
-There is a positive linear relationship between the number of bets a player
-places and their total stakes wagered in cash games. We hypothesize that
-players who place more bets will wager larger total amounts, as betting
-volume directly contributes to overall gambling activity. We will use linear
-regression analysis to test this relationship, calculate the correlation
-coefficient, and assess whether the slope is significantly different from
-zero.
+**Research Question:** Does the volume of betting activity (frequency) predict the total financial magnitude of the gambling?
 
-### Hypothesis 2 (Logistic Regression/Classification)
-Player demographic characteristics (age and gender) can predict whether a
-player primarily engages in cash games versus tournaments. We hypothesize
-that younger players and male players are more likely to prefer cash games
-over tournaments. We will develop a logistic regression model, train it on
-70% of the data, and test its classification accuracy on the remaining 30%.
+We define $X$ as the number of bets placed and $Y$ as the total stakes wagered in cash games. The linear regression model is represented as:
+$$Y = \beta_0 + \beta_1 X + \epsilon$$
+Where:
 
-## 5. Initial Insights
+* **$\beta_0$ (Y-Intercept):** Mathematically, this is the predicted total stakes for a player who places zero bets ($X=0$). **In this context, where all included players have placed bets, it primarily serves as a mathematical constant to anchor the regression line, not a meaningful predictor of real-world stakes.**
+
+* **$\beta_1$ (Slope Coefficient):** The **expected change** in total stakes for every single additional bet placed. This is the **effect size** we are testing.
+
+* **$\epsilon$ (Error Term):** The **unexplained variation** in total stakes that is not accounted for by the number of bets (e.g., luck, table limits, or unobserved factors).
+
+
+* **$H_0$ (Null Hypothesis):** $\beta_1 = 0$. There is no linear relationship between the number of bets and total stakes.
+
+* **$H_a$ (Alternative Hypothesis):** $\beta_1 \neq 0$. There is a significant linear relationship.
+
+---
+
+### Hypothesis 2 (Multiple Linear Regression)
+**Research Question:** Do demographic characteristics (Age and Gender) predict the total amount a player wagers?
+
+We define $Y$ as the Total Stakes Wagered, $X_1$ as Age, and $X_2$ as Gender (encoded as 0 for Female, 1 for Male). The model is:
+$$Y = \beta_0 + \beta_1(Age) + \beta_2(Gender) + \epsilon$$
+Where:
+
+* **$\beta_0$ (Y-Intercept):** Mathematically, this is the predicted total stakes (€) when all predictor variables are zero (Age=0, Gender=0). **Since a 0-year-old cannot gamble, this term provides no practical interpretation and should be understood only as the necessary constant to align the fitted model with the observed data.**
+
+* **$\beta_1$ (Age Coefficient):** The **change** in total stakes for every one-year increase in age, *holding gender constant*.
+
+* **$\beta_2$ (Gender Coefficient):** The **difference** in total stakes between male players and the baseline female players (when controlling for age).
+
+* **$\epsilon$ (Error Term):** The **unexplained variation** in total stakes not accounted for by Age and Gender.
+
+* **$H_0$ (Null Hypothesis):** $\beta_1 = 0$ and $\beta_2 = 0$. Age and Gender have no linear relationship with total stakes wagered.
+* **$H_a$ (Alternative Hypothesis):** $\beta_1 < 0$ and $\beta_2 > 0$.
+    * We hypothesize that $\beta_1$ will be negative (younger players bet more).
+    * We hypothesize that $\beta_2$ will be positive (male players bet more than female players).
+
+---
+
+### Why We Include $\beta_0$ and $\epsilon$ in the Model
+
+Understanding the roles of the constant ($\beta_0$) and the error term ($\epsilon$) is crucial for interpreting the model:
+
+#### 1. The Role of $\beta_0$ (The Intercept)
+
+Even when the literal interpretation of $\beta_0$ is meaningless (like predicting the stakes of a 0-year-old), the term is crucial for the mathematical integrity of the model.
+
+1.  **It Anchors the Line:** $\beta_0$ allows the regression line (or plane, in the case of multiple regression) to be shifted up or down so that it passes through the **mean** of the data. Without it, the line would be forced to start at the origin (0, 0), which would almost certainly result in a terrible fit for the actual data points.
+2.  **It Isolates the Effects of the Slopes:** In a multiple regression (Hypothesis 2), the goal is to determine the effect of Age ($\beta_1$) and Gender ($\beta_2$) **independently**. $\beta_0$ absorbs the overall average stakes and ensures that the coefficients ($\beta_1$ and $\beta_2$) truly represent the *change* associated with their respective variables, rather than compensating for a general baseline value.
+
+#### 2. The Role of $\epsilon$ (The Error Term)
+
+The error term ($\epsilon$) is equally crucial because it acknowledges that our model is an **imperfect representation of reality**.
+
+1.  **It Captures Missing Information:** $\epsilon$ represents all the variation in total stakes that is **not explained** by our chosen predictor variables (Age, Gender, or Number of Bets). This includes factors like individual luck, specific poker strategy, time spent online, or the player's emotional state.
+2.  **It Satisfies Statistical Assumptions:** In linear regression, we must assume this $\epsilon$ (the difference between the actual stakes and the predicted stakes) is purely **random noise** and not systematically related to our predictor variables. This assumption is fundamental for calculating reliable $p$-values and confidence intervals, which we use to determine if the effects of our $\beta$ coefficients are statistically significant.
+
+## 5\. Initial Insights
 
 ### Descriptive Statistics
 
@@ -201,30 +255,14 @@ n_withdrawal_players <- length(
 withdrawal_rate <- round(
   n_withdrawal_players / nrow(demographics) * 100, 1
 )
-
-# Aggregate deposits and withdrawals by player
-player_deposits <- deposits %>%
-  filter(Status == "S") %>%
-  group_by(UserID) %>%
-  summarise(Total_Deposits = sum(Amount, na.rm = TRUE))
-
-player_withdrawals <- withdrawals %>%
-  filter(Status == "S") %>%
-  group_by(UserID) %>%
-  summarise(Total_Withdrawals = sum(Amount, na.rm = TRUE))
 ```
 
-Preliminary exploration reveals several important patterns:
+Preliminary exploration reveals several important patterns based on the dataset of 5,028 players:
 
-- Only **`r n_withdrawal_players`** of **`r nrow(demographics)`** players
-  (**`r withdrawal_rate`%**) made successful withdrawals, suggesting many
-  players experience net losses
-- **`r n_cash_players`** players engaged in cash games and
-  **`r n_tournament_players`** played tournaments, with some overlap
-- The dataset shows high variability in betting amounts and player
-  engagement levels
-- Rich temporal structure (daily records from February 2015) allows for
-  analysis of betting patterns over time
+  - Only **`r n_withdrawal_players`** of **`r nrow(demographics)`** players (**`r withdrawal_rate`%**) made successful withdrawals, suggesting many players experience net losses.
+  - **`r n_cash_players`** players engaged in cash games, which tracks daily stakes and winnings.
+  - The dataset shows high variability in betting amounts and player engagement levels.
+  - Rich temporal structure (daily records from February 2015) allows for analysis of betting patterns over time.
 
 ### Exploratory Visualizations
 
@@ -244,7 +282,8 @@ p2 <- ggplot(gender_counts, aes(x = Gender, y = n, fill = Gender)) +
   theme_minimal() +
   scale_fill_manual(values = c("F" = "#E69F00", "M" = "#56B4E9"))
 
-# Number of bets vs total stakes (for hypothesis 1)
+# Prepare Data for Hypothesis Plots
+# Aggregate stakes and bets by user
 player_betting_volume <- cash_games %>%
   group_by(UserID) %>%
   summarise(
@@ -256,79 +295,53 @@ player_betting_volume <- cash_games %>%
     Total_Stakes > 50
   )
 
-# Trim outliers (5th-95th percentile)
-bets_limits <- quantile(player_betting_volume$Number_of_Bets, c(0.05, 0.95))
-stakes_limits <- quantile(player_betting_volume$Total_Stakes, c(0.05, 0.95))
-trimmed_volume <- player_betting_volume %>%
+# Join with demographics for Hypothesis 2
+plot_data <- player_betting_volume %>%
+  inner_join(demographics, by = "UserID")
+
+# Trim outliers (5th-95th percentile) for cleaner visualization
+bets_limits <- quantile(plot_data$Number_of_Bets, c(0.05, 0.95))
+stakes_limits <- quantile(plot_data$Total_Stakes, c(0.05, 0.95))
+
+trimmed_data <- plot_data %>%
   filter(
     Number_of_Bets >= bets_limits[1] &
       Number_of_Bets <= bets_limits[2],
     Total_Stakes >= stakes_limits[1] & Total_Stakes <= stakes_limits[2]
   )
 
-p3 <- ggplot(
-  trimmed_volume,
-  aes(x = Number_of_Bets, y = Total_Stakes)
-) +
-  geom_point(alpha = 0.5, color = "steelblue", size = 2) +
-  geom_smooth(method = "lm", color = "red", se = TRUE, linewidth = 1.3) +
+# Plot 3: Hypothesis 1 (Bets vs Stakes)
+p3 <- ggplot(trimmed_data, aes(x = Number_of_Bets, y = Total_Stakes)) +
+  geom_point(alpha = 0.4, color = "steelblue", size = 1.5) +
+  geom_smooth(method = "lm", color = "red", se = TRUE, linewidth = 1) +
   scale_y_continuous(labels = scales::comma) +
   labs(
-    title = "Number of Bets vs Total Stakes Wagered (Hypothesis 1)",
-    subtitle = sprintf(
-      "N = %d players | More bets = higher total stakes",
-      nrow(trimmed_volume)
-    ),
-    x = "Number of Bets Placed",
+    title = "Hypothesis 1: Bets vs. Total Stakes",
+    subtitle = "Testing positive linear relationship",
+    x = "Frequency (Number of Bets)",
+    y = "Magnitude (Total Stakes €)"
+  ) +
+  theme_minimal()
+
+# Plot 4: Hypothesis 2 (Age + Gender vs Stakes)
+# We plot Age vs Stakes, colored by Gender, with trend lines for each
+p4 <- ggplot(trimmed_data, aes(x = SystemAgeAsOfReg, y = Total_Stakes, color = Gender)) +
+  geom_point(alpha = 0.4, size = 1.5) +
+  geom_smooth(method = "lm", se = FALSE, linewidth = 1.2) +
+  scale_color_manual(values = c("F" = "#E69F00", "M" = "#56B4E9")) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(
+    title = "Hypothesis 2: Demographics vs. Stakes",
+    subtitle = "Testing if Younger Men bet more",
+    x = "Player Age",
     y = "Total Stakes Wagered (€)"
   ) +
   theme_minimal() +
-  theme(plot.subtitle = element_text(size = 9, color = "gray40"))
-
-# Game type preference by demographics (for hypothesis 2)
-cash_players <- data.frame(
-  UserID = unique(cash_games$UserID),
-  PlaysCash = 1
-)
-tournament_players <- data.frame(
-  UserID = unique(tournaments$UserID),
-  PlaysTournaments = 1
-)
-
-player_types <- demographics %>%
-  left_join(cash_players, by = "UserID") %>%
-  left_join(tournament_players, by = "UserID") %>%
-  mutate(
-    PlaysCash = ifelse(is.na(PlaysCash), 0, PlaysCash),
-    PlaysTournaments = ifelse(is.na(PlaysTournaments), 0, PlaysTournaments),
-    GameType = case_when(
-      PlaysCash == 1 & PlaysTournaments == 0 ~ "Cash Only",
-      PlaysCash == 0 & PlaysTournaments == 1 ~ "Tournaments Only",
-      PlaysCash == 1 & PlaysTournaments == 1 ~ "Both",
-      TRUE ~ "Neither"
-    )
-  )
-
-p4 <- ggplot(
-  player_types %>% filter(GameType != "Neither"),
-  aes(x = GameType, fill = Gender)
-) +
-  geom_bar(position = "dodge") +
-  labs(
-    title = "Type Preference by Gender (Hypothesis 2 Motivation)",
-    x = "Game Type", y = "Count"
-  ) +
-  theme_minimal() +
-  scale_fill_manual(values = c("F" = "#E69F00", "M" = "#56B4E9"))
+  theme(legend.position = "bottom")
 
 # Arrange plots
 grid.arrange(p1, p2, ncol = 2)
 grid.arrange(p3, p4, ncol = 2)
 ```
 
-These visualizations motivate our hypotheses and demonstrate interesting
-patterns in the data that warrant statistical testing. The relationship
-between number of bets and total stakes will quantify how betting volume
-contributes to overall gambling activity, testing our first hypothesis. The
-game type preferences show potential demographic differences worth exploring
-in our second hypothesis through logistic regression.
+These visualizations motivate our hypotheses and demonstrate interesting patterns in the data that warrant statistical testing. The relationship between number of bets and total stakes ($P3$) visually confirms a strong correlation, setting up our first linear regression. The demographic plot ($P4$) allows us to visually inspect the slopes for Age and Gender simultaneously; if our hypothesis is correct, we expect to see the regression lines trending downwards (higher stakes for lower age) and the "Male" line positioned higher than the "Female" line.
