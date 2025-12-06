@@ -1,0 +1,64 @@
+### Hypothesis 1 (Two-Sample T-Test)
+
+**Research Question:** Is there a significant difference in the mean total stakes wagered between players who bet frequently (High-Frequency) and players who bet infrequently (Low-Frequency)?
+
+We define two groups based on the median number of bets:
+
+- **Group 1 (Low-Frequency Bettors):** Players with a number of bets below the median ($\mu_{low}$)
+- **Group 2 (High-Frequency Bettors):** Players with a number of bets at or above the median ($\mu_{high}$)
+
+The T-test compares the mean total stakes ($Y$) between these two population groups.
+
+* **$H_0$ (Null Hypothesis):** $\mu_{high} = \mu_{low}$. The mean total stakes is the same for both groups.
+* **$H_a$ (Alternative Hypothesis):** $\mu_{high} > \mu_{low}$. High-Frequency bettors have a significantly higher mean total stakes than Low-Frequency bettors.
+
+
+
+Load data from CashGames.csv and Tournaments.csv.\
+```{r, message=FALSE}
+library(dplyr)
+cash <- read.csv("csv/CashGames.csv")
+trnm <- read.csv("csv/Tournaments.csv")
+```
+
+The total stakes for each player are computed separately for cash games and tournaments. Then, the two tables are merged. Missing values are replaced with zero, and the overall total stakes are calculated by summing cash and tournament stakes for each player.\
+```{r}
+bets_cash <- cash %>% group_by(UserID) %>% summarise(TotalStakesC = sum(StakesC))
+bets_trnm <- trnm %>% group_by(UserID) %>% summarise(TotalStakesT = sum(StakesT))
+
+bets_total <- full_join(bets_cash, bets_trnm, by = "UserID") %>%
+  mutate(
+    TotalStakesC = ifelse(is.na(TotalStakesC), 0, TotalStakesC),
+    TotalStakesT = ifelse(is.na(TotalStakesT), 0, TotalStakesT),
+    TotalStakes = TotalStakesC + TotalStakesT
+  )
+```
+The number of days each player placed bets is counted separately for cash games and tournaments. These counts are merged, missing values replaced with zero, and summed to get total active betting days. Finally, this information is merged with total stakes to create a single table of players.\
+```{r}
+freq_cash <- cash %>% group_by(UserID) %>% summarise(BetDays = n())
+freq_trnm <- trnm %>% group_by(UserID) %>% summarise(BetDays = n())
+
+frequency <- full_join(freq_cash, freq_trnm, by = "UserID") %>%
+  mutate(
+    BetDays.x = ifelse(is.na(BetDays.x), 0, BetDays.x),
+    BetDays.y = ifelse(is.na(BetDays.y), 0, BetDays.y),
+    TotalDays = BetDays.x + BetDays.y
+  ) %>% select(UserID, TotalDays)
+players <- merge(bets_total, frequency, by = "UserID")
+```
+Players are divided into Low-Frequency and High-Frequency groups based on the median number of active betting days. Two separate vectors of total stakes are extracted, one for each group, to prepare for statistical comparison.\
+```{r}
+median_freq <- median(players$TotalDays)
+
+players$Group <- ifelse(players$TotalDays < median_freq, "Low", "High")
+
+high <- players %>% filter(Group == "High") %>% pull(TotalStakes)
+low  <- players %>% filter(Group == "Low") %>% pull(TotalStakes)
+```
+To evaluate whether high-frequency bettors place significantly higher total stakes than low-frequency bettors, we used Welch Two-Sample t-test. It calculates t-statistic like: $t = \frac{\bar{X}_1 - \bar{X}_2}{\sqrt{\frac{s_1^2}{n_1} + \frac{s_2^2}{n_2}}}$.\
+```{r}
+t_result <- t.test(high, low, alternative = "greater")
+t_result
+```
+We use Welch Two-Sample t-test to compare the means of two groups (High-Frequency vs Low-Frequency players). Welch test is better here than Students because it accounts for unequal variances between the groups, which is likely in gambling data.\
+For High frequency players we got mean of 12027.8847 and for Low frequency players 267.3973, meaning that High frequency players have a lot higher mean. The p-value is far below the standard significance level of 0.05, so we reject the null hypothesis **$H_0$:** $\mu_{high} = \mu_{low}$.\
