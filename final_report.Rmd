@@ -62,3 +62,124 @@ t_result
 ```
 We use Welch Two-Sample t-test to compare the means of two groups (High-Frequency vs Low-Frequency players). Welch test is better here than Students because it accounts for unequal variances between the groups, which is likely in gambling data.\
 For High frequency players we got mean of 12027.8847 and for Low frequency players 267.3973, meaning that High frequency players have a lot higher mean. The p-value is far below the standard significance level of 0.05, so we reject the null hypothesis **$H_0$:** $\mu_{high} = \mu_{low}$.\
+
+---
+
+### Hypothesis 2 (Multiple Linear Regression)
+
+**Research Question:** Do demographic characteristics (Age and Gender) predict the total amount a player wagers?
+
+We define the model: $Y = \beta_0 + \beta_1(Age) + \beta_2(Gender) + \epsilon$, where Gender is encoded as 0 for Female, 1 for Male.
+
+* **$H_0$:** $\beta_1 = 0$ and $\beta_2 = 0$. Age and Gender have no linear relationship with total stakes.
+* **$H_a$:** $\beta_1 < 0$ and $\beta_2 > 0$ (younger players and males bet more).
+
+Merge demographics with player stakes data.\
+```{r}
+demographics <- read.csv("csv/Demographics.csv")
+
+regression_data <- players %>%
+  inner_join(demographics, by = "UserID") %>%
+  filter(!is.na(SystemAgeAsOfReg) & !is.na(Gender)) %>%
+  mutate(
+    Age = SystemAgeAsOfReg,
+    GenderNumeric = ifelse(Gender == "M", 1, 0)
+  )
+```
+
+Visualize the relationships between demographics and stakes.\
+```{r, fig.width=10, fig.height=4, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(gridExtra)
+
+# Filter data for visualization (remove extreme outliers)
+plot_data <- regression_data %>% filter(TotalStakes <= 50000)
+
+p1 <- ggplot(plot_data, aes(x = Age, y = TotalStakes, color = Gender)) +
+  geom_point(alpha = 0.3, size = 1) +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 1) +
+  scale_color_manual(values = c("F" = "#E69F00", "M" = "#56B4E9")) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Age vs Total Stakes by Gender", x = "Age", y = "Total Stakes (€)") +
+  theme_minimal() + theme(legend.position = "bottom")
+
+p2 <- ggplot(plot_data, aes(x = Gender, y = TotalStakes, fill = Gender)) +
+  geom_boxplot(alpha = 0.7) +
+  scale_fill_manual(values = c("F" = "#E69F00", "M" = "#56B4E9")) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Stakes by Gender", x = "Gender", y = "Total Stakes (€)") +
+  theme_minimal() + theme(legend.position = "none")
+
+grid.arrange(p1, p2, ncol = 2)
+```
+
+Descriptive statistics by gender to compare median and mean stakes.\
+```{r}
+library(knitr)
+
+gender_stats <- regression_data %>%
+  group_by(Gender) %>%
+  summarise(
+    N = n(),
+    Mean = mean(TotalStakes, na.rm = TRUE),
+    Median = median(TotalStakes, na.rm = TRUE),
+    SD = sd(TotalStakes, na.rm = TRUE)
+  )
+
+kable(gender_stats, digits = 2, format.args = list(big.mark = ","),
+      caption = "Stakes Statistics by Gender",
+      col.names = c("Gender", "N", "Mean Stakes (€)", "Median Stakes (€)", "SD (€)"))
+```
+
+Fit the multiple linear regression model using Ordinary Least Squares (OLS).\
+```{r}
+model <- lm(TotalStakes ~ Age + GenderNumeric, data = regression_data)
+summary(model)
+```
+
+The model estimates coefficients by minimizing: $\sum_{i=1}^{n} (Y_i - \hat{Y}_i)^2 = \sum_{i=1}^{n} (Y_i - \beta_0 - \beta_1 Age_i - \beta_2 Gender_i)^2$
+
+For each coefficient, we compute the t-statistic: $t = \frac{\hat{\beta}_j}{SE(\hat{\beta}_j)}$, where $SE(\hat{\beta}_j)$ is the standard error.
+
+Extract coefficients and test directional hypotheses.\
+```{r}
+# Get coefficients and standard errors
+beta1 <- coef(model)["Age"]
+beta2 <- coef(model)["GenderNumeric"]
+se_beta1 <- summary(model)$coefficients["Age", "Std. Error"]
+se_beta2 <- summary(model)$coefficients["GenderNumeric", "Std. Error"]
+
+# Calculate t-statistics
+t_beta1 <- beta1 / se_beta1
+t_beta2 <- beta2 / se_beta2
+
+# One-tailed p-values
+p_beta1 <- pt(t_beta1, df = model$df.residual, lower.tail = TRUE)
+p_beta2 <- pt(t_beta2, df = model$df.residual, lower.tail = FALSE)
+
+# Summary table
+test_results <- data.frame(
+  Hypothesis = c("β₁ (Age) < 0", "β₂ (Gender) > 0"),
+  Estimate = c(beta1, beta2),
+  t_statistic = c(t_beta1, t_beta2),
+  p_value = c(p_beta1, p_beta2),
+  Conclusion = c(
+    ifelse(p_beta1 < 0.05 & beta1 < 0, "Reject H₀", "Fail to reject H₀"),
+    ifelse(p_beta2 < 0.05 & beta2 > 0, "Reject H₀", "Fail to reject H₀")
+  )
+)
+
+kable(test_results, digits = 4, caption = "Hypothesis Test Results")
+```
+
+**Conclusion:**
+
+The multiple linear regression analysis reveals that there is no significant relation between gender and gambling total waging. On other hand, we can clearly see, that more mans gamble, which by the way make plots falsely conclude that mans wage more.
+
+The t-statistics test whether each coefficient is significantly different from zero: for β₁, we test if it's significantly less than zero (one-tailed test with $H_a: \beta_1 < 0$), and for β₂, we test if it's significantly greater than zero (one-tailed test with $H_a: \beta_2 > 0$).
+
+If both p-values are below the significance level (α = 0.05) and the coefficient signs match our predictions, we reject the null hypothesis. This would confirm that: (1) younger players tend to wager significantly more than older players, and (2) male players wager significantly more than female players, controlling for age. The model's R² value quantifies the proportion of variance in total stakes explained by these demographic predictors, indicating the practical importance of age and gender in understanding betting behavior patterns.
+
+In our results we see, that not only age and gender dont play significant role in gamble total wage, but also that age almost dont contribute(p_value_b1 = 0.8 which is very lose to 1).
+
+**In contrast to what we thought that young mans gamble more, real world data showed gender equality of gamblers.**
