@@ -1,20 +1,264 @@
-### Hypothesis 1 (Two-Sample T-Test)
+---
+title: "Statistical Analysis of Player Behaviour in Online Poker"
+author: "Roman Prokhorov, Maksym Holovin, Nazar Pasichnyk"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+  pdf_document: default
+---
 
-**Research Question:** Is there a significant difference in the mean total stakes wagered between players who bet frequently (High-Frequency) and players who bet infrequently (Low-Frequency)?
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, warning = FALSE, message = FALSE,
+  fig.width = 8, fig.height = 5
+)
 
-We define two groups based on the median number of bets:
+# Install required packages if not already installed
+if (!require("gridExtra", quietly = TRUE)) {
+  install.packages("gridExtra", repos = "https://cran.rstudio.com/")
+}
 
-- **Group 1 (Low-Frequency Bettors):** Players with a number of bets below the median ($\mu_{low}$)
-- **Group 2 (High-Frequency Bettors):** Players with a number of bets at or above the median ($\mu_{high}$)
+library(ggplot2)
+library(dplyr)
+library(knitr)
+library(gridExtra)
+```
 
-The T-test compares the mean total stakes ($Y$) between these two population groups.
+```{r load_data, include=FALSE}
+# Load all datasets
+demographics <- read.csv("csv/Demographics.csv")
+cash_games <- read.csv("csv/CashGames.csv")
+tournaments <- read.csv("csv/Tournaments.csv")
+deposits <- read.csv("csv/Deposits.csv")
+withdrawals <- read.csv("csv/Withdrawals.csv")
 
-* **$H_0$ (Null Hypothesis):** $\mu_{high} = \mu_{low}$. The mean total stakes is the same for both groups.
-* **$H_a$ (Alternative Hypothesis):** $\mu_{high} > \mu_{low}$. High-Frequency bettors have a significantly higher mean total stakes than Low-Frequency bettors.
+# Load country codes from ISO 3166-1 standard
+raw_data <- read.csv(
+  paste0(
+    "https://raw.githubusercontent.com/lukes/",
+    "ISO-3166-Countries-with-Regional-Codes/",
+    "master/all/all.csv"
+  ),
+  stringsAsFactors = FALSE
+)
 
+# Create Nations lookup table
+nations <- data.frame(
+  Number = raw_data$country.code, NameEN = raw_data$name,
+  Char2 = raw_data$alpha.2, Char3 = raw_data$alpha.3,
+  stringsAsFactors = FALSE
+)
 
+# Apply GVC-specific corrections (as noted in data documentation)
+nations$NameEN[nations$Number == 626] <- "East Timor"
+nations$Char2[nations$Number == 626] <- "TP"
+nations$Char3[nations$Number == 626] <- "TMP"
+nations$Char3[nations$Number == 620] <- "POR"
+nations$Char3[nations$Number == 642] <- "ROM"
+nations$Char3[nations$Number == 756] <- "SUI"
+nations$NameEN[nations$Number == 248] <- "Aland Islands"
 
-Load data from CashGames.csv and Tournaments.csv.\
+# Add "Undefined" category
+nations <- rbind(
+  nations,
+  data.frame(
+    Number = 1000, NameEN = "Undefined",
+    Char2 = "UD", Char3 = "UND",
+    stringsAsFactors = FALSE
+  )
+)
+
+# Merge country names with demographics
+demographics <- demographics %>%
+  left_join(nations, by = c("CountryID" = "Number")) %>%
+  rename(Country = NameEN)
+```
+
+# 1. Research Aim
+
+This study aims to analyze patterns in online poker player behavior using real transaction and gameplay data. Specifically, we investigate:
+
+1. **The relationship between betting frequency and wagered amounts** - examining whether players who bet more frequently also stake significantly higher total amounts.
+
+2. **The predictive power of demographic characteristics** - determining whether age and gender can predict the total amount a player wagers.
+
+Understanding these patterns provides insights into different player types and their gambling strategies, which has implications for responsible gambling policies and platform design.
+
+# 2. Data Source and Description
+
+## 2.1 Data Source
+
+**Source:** The Transparency Project (www.thetransparencyproject.org)
+
+**Provider:** Division on Addiction, Cambridge Health Alliance, Harvard Medical School
+
+**Dataset:** "Second Session at the Virtual Poker Table"
+
+**Sample Size:** 5,028 online poker players who registered in February 2015
+
+**Reference:** Tom, M. A., et al. (2022). Second Session at the Virtual Poker Table: A Contemporary Study of Actual Online Poker Activity. *Journal of Gambling Studies*. https://doi.org/10.1007/s10899-022-10147-1
+
+## 2.2 Data Structure
+
+The dataset consists of five interconnected CSV files:
+
+- **Demographics** (5,028 players): Age, Gender, Country of residence (encoded using ISO 3166-1 country codes)
+- **Cash Games** (51,763 daily records): Stakes wagered, winnings, number of sessions
+- **Tournaments** (82,831 daily records): Entry fees, prizes, number of tournaments
+- **Deposits** (295,119 transactions): Amount, payment method, transaction status
+- **Withdrawals** (32,307 transactions): Amount, payment method, transaction status
+
+Key variables include player demographics, daily gambling activity (stakes and winnings), and financial transactions (deposits and withdrawals in Euros). Country information is mapped from numeric ISO 3166-1 codes to country names for analysis.
+
+### Sample Data Structure
+
+```{r data_samples}
+# Demographics sample - show with country names
+kable(
+  head(
+    demographics[, c("UserID", "SystemAgeAsOfReg", "Gender", "Country")],
+    5
+  ),
+  caption = "Demographics Sample (with Country Names)",
+  col.names = c("User ID", "Age", "Gender", "Country")
+)
+
+# Cash Games sample
+kable(
+  head(cash_games, 5), caption = "Cash Games Sample",
+  col.names = c("User ID", "Date", "Sessions", "Stakes (€)", "Winnings (€)")
+)
+
+# Tournaments sample
+kable(
+  head(tournaments, 5), caption = "Tournaments Sample",
+  col.names = c("User ID", "Date", "Tournaments", "Stakes (€)", "Winnings (€)")
+)
+```
+
+# 3. Descriptive Analysis
+
+## 3.1 Player Demographics
+
+```{r descriptive_stats}
+# Player demographics summary
+demo_summary <- demographics %>%
+  summarise(
+    N = n(),
+    Mean_Age = mean(SystemAgeAsOfReg, na.rm = TRUE),
+    SD_Age = sd(SystemAgeAsOfReg, na.rm = TRUE),
+    Male_Pct = mean(Gender == "M", na.rm = TRUE) * 100
+  )
+
+kable(demo_summary, digits = 2,
+      caption = "Demographics Summary",
+      col.names = c("N Players", "Mean Age", "SD Age", "% Male"))
+
+# Top 10 countries by player count
+top_countries <- demographics %>%
+  filter(!is.na(Country)) %>%
+  count(Country, sort = TRUE) %>%
+  head(10)
+
+kable(
+  top_countries, caption = "Top 10 Countries by Player Count",
+  col.names = c("Country", "Number of Players")
+)
+```
+
+## 3.2 Financial Activity Overview
+
+```{r financial_activity}
+# Financial activity summary
+n_withdrawal_players <- length(
+  unique(withdrawals$UserID[withdrawals$Status == "S"])
+)
+withdrawal_rate <- round(
+  n_withdrawal_players / nrow(demographics) * 100, 1
+)
+
+fin_summary <- data.frame(
+  Metric = c("Total Deposits", "Successful Deposits", "Total Withdrawals",
+             "Successful Withdrawals", "Players with Withdrawals"),
+  Value = c(
+    nrow(deposits),
+    sum(deposits$Status == "S"),
+    nrow(withdrawals),
+    sum(withdrawals$Status == "S"),
+    n_withdrawal_players
+  )
+)
+kable(fin_summary, caption = "Financial Activity Overview", format.args = list(big.mark = ","))
+```
+
+**Key Observation:** Only **`r n_withdrawal_players`** of **`r nrow(demographics)`** players (**`r withdrawal_rate`%**) made successful withdrawals, suggesting the majority of players experienced net losses during this period.
+
+## 3.3 Exploratory Visualizations
+
+```{r age_distribution, fig.width=8, fig.height=5}
+# Age distribution
+ggplot(demographics, aes(x = SystemAgeAsOfReg)) +
+  geom_histogram(binwidth = 5, fill = "steelblue", color = "white") +
+  labs(title = "Player Age Distribution", x = "Age", y = "Count") +
+  theme_minimal()
+```
+
+```{r gender_distribution, fig.width=8, fig.height=5}
+# Gender distribution
+gender_counts <- demographics %>% count(Gender)
+ggplot(gender_counts, aes(x = Gender, y = n, fill = Gender)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = n), vjust = -0.5) +
+  labs(title = "Gender Distribution", x = "Gender", y = "Count") +
+  theme_minimal() +
+  scale_fill_manual(values = c("F" = "#E69F00", "M" = "#56B4E9"))
+```
+
+The dataset shows a typical age distribution for online gambling with a mean age of approximately 33 years. The gender distribution is heavily skewed toward male players (approximately 90%), which is consistent with known patterns in online poker participation.
+
+## 3.4 Motivation for Hypotheses
+
+The descriptive analysis reveals several patterns that motivate our research questions:
+
+1. **Variation in Player Engagement:** The financial activity data shows that only a small fraction of players make withdrawals, suggesting wide variation in gambling behavior and engagement levels. This raises the question: **Do more active (frequent) players also wager larger amounts?** This motivates our first hypothesis examining the relationship between betting frequency and total stakes.
+
+2. **Demographic Patterns:** The strong gender skew (90% male) and concentrated age distribution (mean ~33 years) are consistent with gambling stereotypes suggesting that young males are high-risk gamblers. However, these observations only describe **who plays**, not **how much they wager**. This motivates our second hypothesis: **Do demographic characteristics (age and gender) actually predict wagering intensity among those who participate?**
+
+These observations from the descriptive analysis directly inform the two hypotheses we test in the following sections.
+
+# 4. Hypotheses and Statistical Tests
+
+## 4.1 Hypothesis 1: Betting Frequency and Total Stakes (Two-Sample T-Test)
+
+### Research Question
+
+Is there a significant difference in the mean total stakes wagered between players who bet frequently (High-Frequency) and players who bet infrequently (Low-Frequency)?
+
+### Hypothesis Statement
+
+We define two groups based on the median number of active betting days:
+
+- **Group 1 (Low-Frequency Bettors):** Players with number of betting days below the median, with population mean $\mu_{\text{low}}$
+- **Group 2 (High-Frequency Bettors):** Players with number of betting days at or above the median, with population mean $\mu_{\text{high}}$
+
+**Hypotheses:**
+
+$$H_0: \mu_{\text{high}} = \mu_{\text{low}}$$
+$$H_a: \mu_{\text{high}} > \mu_{\text{low}}$$
+
+The null hypothesis states that the mean total stakes is the same for both groups. The alternative hypothesis posits that High-Frequency bettors have significantly higher mean total stakes than Low-Frequency bettors.
+
+### Motivation
+
+Preliminary data exploration revealed substantial variation in betting frequency across players. Understanding whether more active players also wager larger total amounts has practical implications for platform risk management and responsible gambling interventions.
+
+### Data Preparation and Test Rationale
+
+#### Data Processing
+
+Load data from CashGames.csv and Tournaments.csv:
 ```{r, message=FALSE}
 library(dplyr)
 cash <- read.csv("csv/CashGames.csv")
@@ -46,7 +290,8 @@ frequency <- full_join(freq_cash, freq_trnm, by = "UserID") %>%
   ) %>% select(UserID, TotalDays)
 players <- merge(bets_total, frequency, by = "UserID")
 ```
-Players are divided into Low-Frequency and High-Frequency groups based on the median number of active betting days. Two separate vectors of total stakes are extracted, one for each group, to prepare for statistical comparison.\
+Players are divided into Low-Frequency and High-Frequency groups based on the median number of active betting days. Two separate vectors of total stakes are extracted, one for each group, to prepare for statistical comparison:
+
 ```{r}
 median_freq <- median(players$TotalDays)
 
@@ -55,26 +300,100 @@ players$Group <- ifelse(players$TotalDays < median_freq, "Low", "High")
 high <- players %>% filter(Group == "High") %>% pull(TotalStakes)
 low  <- players %>% filter(Group == "Low") %>% pull(TotalStakes)
 ```
-To evaluate whether high-frequency bettors place significantly higher total stakes than low-frequency bettors, we used Welch Two-Sample t-test. It calculates t-statistic like: $t = \frac{\bar{X}_1 - \bar{X}_2}{\sqrt{\frac{s_1^2}{n_1} + \frac{s_2^2}{n_2}}}$.\
+
+Descriptive statistics by group:
+
+```{r}
+group_stats <- players %>%
+  group_by(Group) %>%
+  summarise(
+    N = n(),
+    Mean = mean(TotalStakes),
+    Median = median(TotalStakes),
+    SD = sd(TotalStakes)
+  )
+
+kable(group_stats, digits = 2, format.args = list(big.mark = ","),
+      caption = "Total Stakes by Betting Frequency Group",
+      col.names = c("Group", "N", "Mean Stakes (€)", "Median Stakes (€)", "SD (€)"))
+```
+
+### Test Selection and Methodology
+
+We employ **Welch's Two-Sample t-test** to compare the means of the two groups. The test statistic is calculated as:
+
+$$t = \frac{\bar{X}_{\text{high}} - \bar{X}_{\text{low}}}{\sqrt{\frac{s_{\text{high}}^2}{n_{\text{high}}} + \frac{s_{\text{low}}^2}{n_{\text{low}}}}}$$
+
+where $\bar{X}$ represents the sample mean, $s^2$ the sample variance, and $n$ the sample size for each group.
+
+**Why Welch's t-test is appropriate:**
+
+1. **Unequal Variances:** Welch's test does not assume equal population variances (unlike Student's t-test), which is crucial for gambling data where variance typically differs between groups
+2. **Large Sample Size:** Both groups have sufficient sample sizes for the asymptotic properties of the test to hold
+3. **One-tailed Test:** We use a one-tailed test (alternative = "greater") because our hypothesis specifically predicts higher stakes for high-frequency players
+
+### Test Execution and Results
+
 ```{r}
 t_result <- t.test(high, low, alternative = "greater")
 t_result
 ```
-We use Welch Two-Sample t-test to compare the means of two groups (High-Frequency vs Low-Frequency players). Welch test is better here than Students because it accounts for unequal variances between the groups, which is likely in gambling data.\
-For High frequency players we got mean of 12027.8847 and for Low frequency players 267.3973, meaning that High frequency players have a lot higher mean. The p-value is far below the standard significance level of 0.05, so we reject the null hypothesis **$H_0$:** $\mu_{high} = \mu_{low}$.\
+
+### Interpretation
+
+The results show:
+
+- **High-Frequency players:** Mean = €`r format(round(mean(high), 2), big.mark = ",")`
+- **Low-Frequency players:** Mean = €`r format(round(mean(low), 2), big.mark = ",")`
+- **t-statistic:** `r round(t_result$statistic, 4)`
+- **p-value:** `r format.pval(t_result$p.value, eps = 0.0001)`
+
+The p-value is far below the standard significance level of α = 0.05. We therefore **reject the null hypothesis** $H_0: \mu_{\text{high}} = \mu_{\text{low}}$.
+
+**Conclusion:** There is strong statistical evidence that high-frequency bettors wager significantly higher total amounts than low-frequency bettors. This finding suggests that betting frequency and total stake amounts are positively associated in online poker.
 
 ---
 
-### Hypothesis 2 (Multiple Linear Regression)
+## 4.2 Hypothesis 2: Demographics and Total Stakes (Multiple Linear Regression)
 
-**Research Question:** Do demographic characteristics (Age and Gender) predict the total amount a player wagers?
+### Research Question
 
-We define the model: $Y = \beta_0 + \beta_1(Age) + \beta_2(Gender) + \epsilon$, where Gender is encoded as 0 for Female, 1 for Male.
+Do demographic characteristics (Age and Gender) predict the total amount a player wagers?
 
-* **$H_0$:** $\beta_1 = 0$ and $\beta_2 = 0$. Age and Gender have no linear relationship with total stakes.
-* **$H_a$:** $\beta_1 < 0$ and $\beta_2 > 0$ (younger players and males bet more).
+### Model Specification
 
-Merge demographics with player stakes data.\
+We define the multiple linear regression model:
+
+$$Y = \beta_0 + \beta_1 \cdot \text{Age} + \beta_2 \cdot \text{Gender} + \epsilon$$
+
+where:
+
+- $Y$ = Total Stakes Wagered (in euros)
+- $\text{Age}$ = Player's age at registration
+- $\text{Gender}$ = Binary variable (0 = Female, 1 = Male)
+- $\beta_0$ = Intercept (baseline total stakes when Age = 0 and Gender = 0)
+- $\beta_1$ = Coefficient for Age (change in stakes per one-year increase in age)
+- $\beta_2$ = Coefficient for Gender (difference in stakes between males and females)
+- $\epsilon$ = Error term (unexplained variation)
+
+**Note on $\beta_0$:** While the intercept has no practical interpretation (a 0-year-old cannot gamble), it is mathematically necessary to allow the regression plane to fit the data properly. It absorbs the overall average stakes and ensures that $\beta_1$ and $\beta_2$ represent pure effects of their respective variables.
+
+### Hypothesis Statement
+
+Based on common gambling stereotypes, we initially hypothesized:
+
+$$H_0: \beta_1 = 0 \text{ and } \beta_2 = 0$$
+$$H_a: \beta_1 < 0 \text{ and } \beta_2 > 0$$
+
+The alternative hypothesis suggests that younger players ($\beta_1 < 0$) and male players ($\beta_2 > 0$) bet more.
+
+### Motivation
+
+Understanding demographic predictors of gambling behavior can inform targeted interventions and responsible gambling policies. Prior research suggests age and gender differences in risk-taking behavior, motivating this investigation.
+
+### Data Preparation
+
+Merge demographics with player stakes data:
 ```{r}
 demographics <- read.csv("csv/Demographics.csv")
 
@@ -87,33 +406,38 @@ regression_data <- players %>%
   )
 ```
 
-Visualize the relationships between demographics and stakes.\
-```{r, fig.width=10, fig.height=4, message=FALSE, warning=FALSE}
+### Exploratory Visualization
+
+Visualize the relationships between demographics and stakes:
+
+```{r age_vs_stakes, fig.width=8, fig.height=5, message=FALSE, warning=FALSE}
 library(ggplot2)
-library(gridExtra)
 
 # Filter data for visualization (remove extreme outliers)
 plot_data <- regression_data %>% filter(TotalStakes <= 50000)
 
-p1 <- ggplot(plot_data, aes(x = Age, y = TotalStakes, color = Gender)) +
+ggplot(plot_data, aes(x = Age, y = TotalStakes, color = Gender)) +
   geom_point(alpha = 0.3, size = 1) +
   geom_smooth(method = "lm", se = TRUE, linewidth = 1) +
   scale_color_manual(values = c("F" = "#E69F00", "M" = "#56B4E9")) +
   scale_y_continuous(labels = scales::comma) +
   labs(title = "Age vs Total Stakes by Gender", x = "Age", y = "Total Stakes (€)") +
   theme_minimal() + theme(legend.position = "bottom")
+```
 
-p2 <- ggplot(plot_data, aes(x = Gender, y = TotalStakes, fill = Gender)) +
+```{r stakes_by_gender, fig.width=8, fig.height=5}
+ggplot(plot_data, aes(x = Gender, y = TotalStakes, fill = Gender)) +
   geom_boxplot(alpha = 0.7) +
   scale_fill_manual(values = c("F" = "#E69F00", "M" = "#56B4E9")) +
   scale_y_continuous(labels = scales::comma) +
   labs(title = "Stakes by Gender", x = "Gender", y = "Total Stakes (€)") +
   theme_minimal() + theme(legend.position = "none")
-
-grid.arrange(p1, p2, ncol = 2)
 ```
 
-Descriptive statistics by gender to compare median and mean stakes.\
+The visualization shows relatively flat regression lines for both genders, suggesting weak relationships between age and total stakes.
+
+Descriptive statistics by gender to compare median and mean stakes:
+
 ```{r}
 library(knitr)
 
@@ -131,17 +455,76 @@ kable(gender_stats, digits = 2, format.args = list(big.mark = ","),
       col.names = c("Gender", "N", "Mean Stakes (€)", "Median Stakes (€)", "SD (€)"))
 ```
 
-Fit the multiple linear regression model using Ordinary Least Squares (OLS).\
+While males constitute the vast majority of players, the mean and median stakes are relatively similar between genders, though males show slightly higher means.
+
+### Test Selection and Methodology
+
+We employ **Multiple Linear Regression** estimated using Ordinary Least Squares (OLS). The model estimates coefficients by minimizing the sum of squared residuals:
+
+$$\text{minimize: } \sum_{i=1}^{n} (Y_i - \hat{Y}_i)^2 = \sum_{i=1}^{n} \left(Y_i - \beta_0 - \beta_1 \cdot \text{Age}_i - \beta_2 \cdot \text{Gender}_i\right)^2$$
+
+For each coefficient, we compute the t-statistic to test significance:
+
+$$t_j = \frac{\hat{\beta}_j}{\text{SE}(\hat{\beta}_j)}$$
+
+where $\text{SE}(\hat{\beta}_j)$ is the standard error of coefficient $j$.
+
+**Why Multiple Linear Regression is appropriate:**
+
+1. **Continuous Outcome:** Total stakes is a continuous variable suitable for linear regression
+2. **Multiple Predictors:** We can simultaneously assess the effects of age and gender
+3. **Controlled Comparison:** The model estimates the effect of each predictor while holding others constant
+4. **Directional Hypotheses:** We can test specific one-tailed hypotheses about coefficient signs
+
+### Model Fitting
+
+Fit the multiple linear regression model:
+
 ```{r}
 model <- lm(TotalStakes ~ Age + GenderNumeric, data = regression_data)
 summary(model)
 ```
 
-The model estimates coefficients by minimizing: $\sum_{i=1}^{n} (Y_i - \hat{Y}_i)^2 = \sum_{i=1}^{n} (Y_i - \beta_0 - \beta_1 Age_i - \beta_2 Gender_i)^2$
+### Model Visualization
 
-For each coefficient, we compute the t-statistic: $t = \frac{\hat{\beta}_j}{SE(\hat{\beta}_j)}$, where $SE(\hat{\beta}_j)$ is the standard error.
+Visualize the fitted regression model:
 
-Extract coefficients and test directional hypotheses.\
+```{r fitted_model_age, fig.width=8, fig.height=5, message=FALSE, warning=FALSE}
+library(ggplot2)
+
+# Plot: Age vs Stakes with regression lines by gender
+ggplot(plot_data, aes(x = Age, y = TotalStakes, color = Gender)) +
+  geom_point(alpha = 0.2, size = 0.8) +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 1.2) +
+  scale_color_manual(values = c("F" = "#E69F00", "M" = "#56B4E9")) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Fitted Model: Age vs Total Stakes by Gender",
+       x = "Age (years)", y = "Total Stakes (€)",
+       subtitle = "Separate regression lines show minimal slope differences") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+```{r predicted_vs_actual, fig.width=8, fig.height=5}
+# Create predictions for visualization
+plot_data_with_pred <- plot_data %>%
+  mutate(Predicted = predict(model, newdata = plot_data))
+
+# Plot: Predicted vs Actual values
+ggplot(plot_data_with_pred, aes(x = Predicted, y = TotalStakes)) +
+  geom_point(alpha = 0.2, size = 0.8, color = "steelblue") +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed", linewidth = 1) +
+  scale_x_continuous(labels = scales::comma) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Predicted vs Actual Total Stakes",
+       x = "Predicted Stakes (€)", y = "Actual Stakes (€)",
+       subtitle = "Points near red line indicate good predictions") +
+  theme_minimal()
+```
+
+### Hypothesis Testing
+
+Extract coefficients and test directional hypotheses:
 ```{r}
 # Get coefficients and standard errors
 beta1 <- coef(model)["Age"]
@@ -169,17 +552,98 @@ test_results <- data.frame(
   )
 )
 
-kable(test_results, digits = 4, caption = "Hypothesis Test Results")
+kable(test_results, digits = 4, caption = "Directional Hypothesis Test Results")
 ```
 
-**Conclusion:**
+### Interpretation
 
-The multiple linear regression analysis reveals that there is no significant relation between gender and gambling total waging. On other hand, we can clearly see, that more mans gamble, which by the way make plots falsely conclude that mans wage more.
+The regression results reveal several important findings:
 
-The t-statistics test whether each coefficient is significantly different from zero: for β₁, we test if it's significantly less than zero (one-tailed test with $H_a: \beta_1 < 0$), and for β₂, we test if it's significantly greater than zero (one-tailed test with $H_a: \beta_2 > 0$).
+1. **Age Effect ($\beta_1$):**
+   - Coefficient: `r round(beta1, 4)`
+   - p-value (one-tailed, $H_a: \beta_1 < 0$): `r round(p_beta1, 4)`
+   - The coefficient is positive (contrary to our hypothesis) and highly non-significant (p ≈ `r round(p_beta1, 2)`), indicating no evidence that younger players bet more
 
-If both p-values are below the significance level (α = 0.05) and the coefficient signs match our predictions, we reject the null hypothesis. This would confirm that: (1) younger players tend to wager significantly more than older players, and (2) male players wager significantly more than female players, controlling for age. The model's R² value quantifies the proportion of variance in total stakes explained by these demographic predictors, indicating the practical importance of age and gender in understanding betting behavior patterns.
+2. **Gender Effect ($\beta_2$):**
+   - Coefficient: `r round(beta2, 4)`
+   - p-value (one-tailed, $H_a: \beta_2 > 0$): `r round(p_beta2, 4)`
+   - The coefficient is slightly positive but not statistically significant at α = 0.05, providing no strong evidence that males bet more when controlling for age
 
-In our results we see, that not only age and gender dont play significant role in gamble total wage, but also that age almost dont contribute(p_value_b1 = 0.8 which is very lose to 1).
+3. **Model Fit:**
+   - R² = `r round(summary(model)$r.squared, 4)`
+   - This indicates that age and gender together explain less than 1% of the variance in total stakes
 
-**In contrast to what we thought that young mans gamble more, real world data showed gender equality of gamblers.**
+### Conclusion
+
+We **fail to reject the null hypothesis** $H_0: \beta_1 = 0$ and $\beta_2 = 0$.
+
+**Key Finding:** Contrary to our initial hypothesis and common gambling stereotypes, **neither age nor gender significantly predict total stakes wagered** in this online poker population. While males constitute approximately 90% of players (a clear gender difference in participation), among those who do play, age and gender have minimal predictive power for wagering amounts.
+
+This finding suggests that:
+- Betting behavior is driven more by individual factors (e.g., strategy, risk tolerance, bankroll) than demographics
+- The stereotype that young males gamble more aggressively is not supported by this data
+- Gender equality exists in wagering amounts among online poker players who choose to participate
+
+The low R² value indicates that demographic variables are poor predictors of gambling intensity, and other behavioral or psychological factors likely play more important roles.
+
+---
+
+# 5. Overall Conclusions and Implications
+
+## 5.1 Summary of Findings
+
+This statistical analysis of 5,028 online poker players revealed two major findings:
+
+**1. Betting Frequency Strongly Predicts Total Stakes (Hypothesis 1 - Confirmed)**
+
+Using Welch's two-sample t-test, we found strong evidence (p < 0.001) that high-frequency bettors wager significantly more than low-frequency bettors. High-frequency players averaged approximately €12,028 in total stakes compared to €267 for low-frequency players - a **45-fold difference**. This confirms that betting frequency and total wagered amounts are strongly positively associated.
+
+**2. Demographics Do Not Predict Wagering Amounts (Hypothesis 2 - Rejected)**
+
+Multiple linear regression analysis found no significant relationship between age or gender and total stakes wagered (R² < 0.01). Despite initial hypotheses based on gambling stereotypes:
+- Age has virtually no effect on wagering amounts (p ≈ 0.80)
+- Gender shows no significant effect when controlling for age (p > 0.05)
+- Among players who participate, betting intensity is independent of demographic characteristics
+
+## 5.2 Methodological Strengths
+
+1. **Large, Real-World Dataset:** Analysis of 5,028 actual players with complete transaction records
+2. **Appropriate Statistical Methods:**
+   - Welch's t-test properly handles unequal variances
+   - One-tailed tests match directional hypotheses
+   - Multiple regression controls for confounding variables
+3. **Clear Hypothesis Testing:** Pre-specified hypotheses with explicit null and alternative formulations
+4. **Transparent Reporting:** All assumptions, calculations, and interpretations clearly documented
+
+## 5.3 Practical Implications
+
+**For Responsible Gambling:**
+- High-frequency players warrant closer monitoring regardless of demographics
+- Prevention efforts should focus on behavioral patterns rather than demographic targeting
+- The finding that most players (>90%) never make successful withdrawals suggests widespread losses
+
+**For Platform Design:**
+- Frequency-based alerts may be more effective than demographic-based interventions
+- Player segmentation should prioritize behavioral metrics over demographics
+
+## 5.4 Limitations
+
+1. **Cross-sectional Data:** Single month of registration limits generalizability
+2. **Survivorship Bias:** Analysis includes only players who remained active enough to generate records
+3. **Platform-specific:** Results may not generalize to other gambling platforms or games
+4. **Unobserved Variables:** Many factors affecting betting behavior (income, experience, motivation) were not measured
+
+## 5.5 Future Research Directions
+
+- Longitudinal analysis of betting patterns over time
+- Investigation of psychological and behavioral predictors beyond demographics
+- Analysis of skill level and learning effects on wagering patterns
+- Comparison across different gambling platforms and game types
+
+---
+
+# 6. References
+
+Tom, M. A., Luo, S., Desai, R. A., Ye, H., Gong, X., Rossen, J., Peiper, N., Kraus, S. W., & Potenza, M. N. (2022). Second Session at the Virtual Poker Table: A Contemporary Study of Actual Online Poker Activity. *Journal of Gambling Studies*, 38, 1349–1367. https://doi.org/10.1007/s10899-022-10147-1
+
+---
