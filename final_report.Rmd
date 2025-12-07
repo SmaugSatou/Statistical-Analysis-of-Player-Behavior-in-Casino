@@ -82,7 +82,7 @@ This study aims to analyze patterns in online poker player behavior using real t
 
 1. **The relationship between betting frequency and wagered amounts** - examining whether players who bet more frequently also stake significantly higher total amounts.
 
-2. **The predictive power of demographic characteristics** - determining whether age and gender can predict the total amount a player wagers.
+2. **The predictive power of demographic characteristics** - determining whether age and gender can relate to the total amount a player wagers.
 
 Understanding these patterns provides insights into different player types and their gambling strategies, which has implications for responsible gambling policies and platform design.
 
@@ -455,7 +455,7 @@ kable(gender_stats, digits = 2, format.args = list(big.mark = ","),
       col.names = c("Gender", "N", "Mean Stakes (€)", "Median Stakes (€)", "SD (€)"))
 ```
 
-While males constitute the vast majority of players, the mean and median stakes are relatively similar between genders, though males show slightly higher means.
+While males constitute the vast majority of players, the  median stake is relatively similar between genders, though males show slightly higher means.
 
 ### Test Selection and Methodology
 
